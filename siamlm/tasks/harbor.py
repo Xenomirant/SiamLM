@@ -137,6 +137,18 @@ def image_for(item: dict, settings: dict) -> tuple[str, str | None, str]:
     return image, env.get("workdir") or found_dir.strip() or None, found_user.strip() or "0"
 
 
+SYSTEM_DIRS = ("/bin", "/sbin", "/lib", "/lib64", "/usr", "/etc", "/var", "/opt", "/root", "/proc", "/sys", "/dev",
+               "/tests", "/logs", "/ctx", "/tmp")
+
+
+def safe_workdir(workdir: str) -> bool:
+    """A working directory whose copy cannot shadow the verifier's binaries or files: not /, and neither an ancestor nor a
+    part of a system folder, /tests or /logs (review, 2 Nov 2026: a task with WORKDIR / would carry a planted /usr/local/bin/timeout
+    into the fresh container)."""
+    w = "/" + workdir.strip("/")
+    return w != "/" and not any(d == w or d.startswith(w + "/") or w.startswith(d + "/") for d in SYSTEM_DIRS)
+
+
 class ItemSandbox(Sandbox):
     """An item's own container (from its task's image): no network, no host mounts, no privilege escalation, limits on
     processes, memory and CPU; the root filesystem is writable (tasks install and change files), /ctx is an in-memory
@@ -247,6 +259,9 @@ class HarborTask(Task):
         executes, as in Harbor itself."""
         box = self.sandbox(item)
         image, workdir, image_user = self.image(item)
+        if workdir and not safe_workdir(workdir):    # copying / or a system folder over the fresh container would
+            raise ValueError(f"{item['uid']}: the working directory {workdir!r} is / or holds a system folder; the "
+                             f"verifier cannot take the agent's copy of it (set [environment].workdir to the project folder)")
         v = item["config"].get("verifier") or {}
         timeout = float(v.get("timeout_sec", 600))
         user = str(v.get("user") or image_user)

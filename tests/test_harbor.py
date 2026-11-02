@@ -108,3 +108,9 @@ def test_the_agent_cannot_forge_its_reward(tmp_path):
     res = read_jsonl(w / "results.jsonl")[0]
     assert (res["reward"], res["passed"], res["verifier_error"]) == (0.0, False, None)
     assert "expected: 3, got: 999" in (w / "harbor" / "a1-1-count-errors" / "verifier" / "test-stdout.txt").read_text()
+
+
+def test_a_system_working_directory_is_refused():
+    from siamlm.tasks.harbor import safe_workdir
+    assert all(safe_workdir(w) for w in ("/app", "/home/user/project", "/workspace", "/srv/app"))
+    assert not any(safe_workdir(w) for w in ("/", "//", "/usr", "/usr/local", "/tests", "/logs", "/tmp"))

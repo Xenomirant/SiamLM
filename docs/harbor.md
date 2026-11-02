@@ -62,7 +62,8 @@ uv run python -m siamlm.run task.name=harbor harbor.path=examples/harbor ctx.edi
   from the task directory, PATH is the standard one and `/logs/verifier` is new. What remains under the agent's
   control is the working directory's contents: a test that imports from it (a module, `conftest.py`, a
   `sitecustomize.py` on `sys.path`) executes the agent's code, as in Harbor itself. Treat rewards from such tests as
-  gameable by a trained policy. The reward becomes the item's `reward` in `results.jsonl` (and `rewards`: every key of
+  gameable by a trained policy. A task whose working directory is `/` or an ancestor of a system folder (`/usr`,
+  `/bin`, `/tests`, `/logs`, ...) is refused: copying it would carry planted binaries into the fresh container. The reward becomes the item's `reward` in `results.jsonl` (and `rewards`: every key of
   reward.json; `workdir_copied` says whether the working directory was carried over). The item counts as solved when
   the reward is at least `harbor.solved_at`. Both containers are then removed; `test-stdout.txt` and the reward file
   are kept in `<world>/harbor/<item>/verifier/`.
