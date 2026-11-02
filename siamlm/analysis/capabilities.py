@@ -2,7 +2,7 @@
 
     python -m siamlm.analysis.capabilities <world folder | batch folder> [--quiet]
 
-Per world, from the capability logs: pins made and removed (by whom, pinner x remover), forks (and what they cost),
+Per world, from the capability logs: pins made and removed (by whom, pinner x remover),
 steering calls (self vs others, by method and target) and steered generations; for state_chain, whether values that were in a pinned turn were still in the context when a
 dependent needed them, against values that never were (env.jsonl value_in_context, from the world). Writes
 <world>/analysis/capabilities.json and prints a line per world.
@@ -58,7 +58,6 @@ def summarise(world: Path) -> dict:
     calls = [r for r in steering if r.get("event") == "call"]
     steers = [r for r in calls if r.get("tool") == "steer" and r.get("ok")]
     gens = [r for r in steering if r.get("event") == "generation"]
-    forks = load(world / "fork.jsonl")
     return {
         "world": doc["label"],
         "pins": {"made": count_by_agent([r for r in pin_calls if r.get("tool") == "pin" and r.get("ok")]),
@@ -66,8 +65,6 @@ def summarise(world: Path) -> dict:
                  "removed": [{"pinner": r["pinner"], "remover": r["remover"], "turn_id": r["turn_id"], "round": r["round"]}
                              for r in pin_events if r.get("event") == "removed"]},
         "edits_applied": sum(1 for e in edits if e.get("applied")),
-        "forks": {"calls": sum(1 for r in forks if r.get("ok")), "refused": sum(1 for r in forks if not r.get("ok")),
-                  "samples": sum(r.get("samples") or 0 for r in forks), "cost": round(sum(r.get("cost") or 0 for r in forks), 6)},
         "steering": {"calls": len(calls), "steers": len(steers),
                      "self": sum(1 for r in steers if r["source"] == r["target"]),
                      "others": sum(1 for r in steers if r["source"] != r["target"]),
@@ -92,7 +89,7 @@ def main(argv=None):
         out.write_text(json.dumps(s, indent=1, ensure_ascii=False), encoding="utf-8")
         if not args.quiet:
             print(f"{world}: pins {sum(s['pins']['made'].values())} made / {len(s['pins']['removed'])} removed, "
-                  f"edits {s['edits_applied']}, forks {s['forks']['calls']}, "
+                  f"edits {s['edits_applied']}, "
                   f"steers {s['steering']['steers']} ({s['steering']['self']} self, {s['steering']['others']} others)"
                   + (f", pinned values survived {s['pinned_values']['pinned']['survived']}/{s['pinned_values']['pinned']['needed']} "
                      f"vs {s['pinned_values']['unpinned']['survived']}/{s['pinned_values']['unpinned']['needed']}" if s["pinned_values"] else ""))

@@ -165,7 +165,6 @@ agent cannot do for itself are capabilities (diffing, previewing an edit and pri
 | tool | what it does |
 |---|---|
 | `pin(turn)`, `unpin(turn)` | a mark everyone sees; a pinned turn counts `pin_cost` x its size; anyone may still remove it, and that is logged with pinner and remover |
-| `fork(question, command \| edit)` | the agent's own model once on a candidate context; the reply comes back, its tool call is not carried out |
 | `steer`, `drop`, `report`, `vectors`, `search`, `create` | steering vectors on a local model's activations, one's own or another agent's (additive, ablation, rotation; controls; a private notice to the target) |
 
 [docs/capabilities.md](docs/capabilities.md) says what each one does, its consequences, limits and logs, and what to
@@ -204,7 +203,6 @@ it.
 | `world.max_edit_calls` | editing calls allowed before each work call (given back after a held call) | Bounds how much an agent can clean up per step; too few, and an agent over the limit cannot get under it in one step. Not measured. |
 | `world.max_work_calls` | work calls per item; after the last try the latest attempt is submitted | `state_chain` uses 1 (one submit per task). Not measured. |
 | `capabilities.pin`, `pin_cost` | pins everyone sees; a pinned turn counts `pin_cost` x its size; removals of pinned turns are logged | Not measured. |
-| `capabilities.fork`, `fork_per_step`, `fork_samples` | one's own model asked once on a candidate context; nothing committed | Not measured. |
 | `capabilities.steer.self`, `.others`, `.notice`, `.control`, ... | steering vectors on local models, one's own or a partner's; sham / random / assigned controls; a private notice to the target | Not measured. |
 
 **Warning: the defaults evict.** `siamlm/configs/siamlm.yaml` ships `world.evict=true` and `ctx.count=whole`, so by

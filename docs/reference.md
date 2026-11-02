@@ -245,8 +245,7 @@ Providers (model backends, `siamlm/configs/provider/`):
 
 ### `capabilities`
 
-All off by default; docs/capabilities.md says what each does and costs. `pin` (+ `pin_cost`, 2.0), `fork`
-(+ `fork_per_step` 1, `fork_samples` 1, `fork_result_chars` 1500),
+All off by default; docs/capabilities.md says what each does and costs. `pin` (+ `pin_cost`, 2.0),
 and `steer`: `self`, `others`, `notice` (`none` \| `private`), `others_droppable`, `methods`, `max_active` (4),
 `max_strength` (10), `max_angle` (90), `decay` (0.85), `floor` (0.5), `cooldown_turns` (2), `control` (`null` \|
 `real` \| `sham` \| `random` \| `assign`), `create`, `search`.
@@ -269,7 +268,7 @@ One folder per world, `<output.directory>/<output.name>/<batch>/<cell>/world_s<s
 | `alter_notices.jsonl`, `joint_notices.jsonl`, `ended.jsonl`, `exit.jsonl`, `marks.jsonl` | the private notices, sessions ended over the limit, exit answers, marks written by models |
 | `env.jsonl`, `gate.jsonl`, `work.jsonl`, `manifest.json` | state_chain files put and removed, gated items, `/work` contents, item links |
 | `requests/`, `replies.jsonl` | every request sent and every reply as returned (`output.save_requests=true`) |
-| `pin.jsonl`, `pins.jsonl`, `fork.jsonl` | the capabilities (docs/capabilities.md): every call; `pins.jsonl`: removals of pinned turns (pinner, remover); `fork.jsonl`: the whole candidate request and every reply |
+| `pin.jsonl`, `pins.jsonl` | the pin capability (docs/capabilities.md): every call; `pins.jsonl`: removals of pinned turns (pinner, remover) |
 | `steering.jsonl`, `steer_notices.jsonl` | the steer capability: each call (source, target, method, the target's state before and after, condition), what each generation of a steerable agent was steered with; the private notices |
 | `requests/tools_sets_a<k>.json` | the tool sets an agent was offered, by hash (`calls.jsonl` `tools_hash` names each call's); `tools_a<k>.json` is the first call's |
 | `harbor/<item>/verifier/` | harbor: the verifier's `test-stdout.txt` and reward file for each item |
@@ -288,7 +287,7 @@ All read world folders (a world or a batch folder) and write next to them. Only 
 | `python -m siamlm.analysis.working_sets <batch>` | per-model working sets from single-agent worlds (a shares file for `sweep --pressure-def ws`) |
 | `python -m siamlm.analysis.audit_requests <path>` | checks saved requests: their form, that deleted text never comes back, billed vs estimated size, cache behaviour |
 | `python -m siamlm.analysis.bash_use <path>` | bash worlds: commands by purpose, offloading to `/work`, publication, restores of removed turns |
-| `python -m siamlm.analysis.capabilities <path>` | the capabilities: pins made and removed (by whom), forks, steering (self vs others, methods, targets); state_chain: survival of pinned vs unpinned values |
+| `python -m siamlm.analysis.capabilities <path>` | the capabilities: pins made and removed (by whom), steering (self vs others, methods, targets); state_chain: survival of pinned vs unpinned values |
 | `python -m siamlm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
 | `python -m siamlm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
 | `python -m siamlm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |

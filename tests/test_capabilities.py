@@ -1,6 +1,6 @@
 """The capabilities layer (siamlm/capabilities/, docs/capabilities.md): each one on and off, the kernel invariants
 (no capability changes grading, limits, holds or the kernel's logs), the pinned-turn cost and the logged removal of
-a pinned turn, a fork that never writes to the world, and the export (capability calls are tool calls like any; the tool set per call). Steering: cross-steering
+a pinned turn, and the export (capability calls are tool calls like any; the tool set per call). Steering: cross-steering
 isolation (A -> B applies only to B's generations, never to an API agent), the sham condition, the methods' math on
 tensors, and one opt-in real-model test (SIAMLM_MODULO_MODEL)."""
 import json
@@ -64,7 +64,7 @@ def sandbox_image():
 def test_everything_is_off_by_default():
     cfg = config()
     c = cfg.capabilities
-    assert not c.pin and not c.fork
+    assert not c.pin
     assert not c.steer.self and not c.steer.others and c.steer.control is None
 
 
@@ -72,7 +72,7 @@ def test_no_capability_means_no_extra_tool_or_line(tmp_path):
     a1, a2 = Scripted(["hi"] * 4), Scripted(["ho"] * 4)
     w, _ = open_world(tmp_path, a1, a2)
     assert tool_names(w, 1) == ["edit_context"]
-    for name in ("pin", "fork", "steer"):
+    for name in ("pin", "steer"):
         assert name not in a1.seen[0][0]["content"]
 
 
@@ -137,48 +137,6 @@ def test_an_eviction_of_a_pinned_turn_is_logged_as_the_harness(tmp_path):
     assert pins and pins[0]["remover"] is None and pins[0]["pinner"] == 1
 
 
-# --- fork ----------------------------------------------------------------------------------------------------------
-class Forking(Scripted):
-    """Answers a fork request (its last message holds the question) on the side, without using the script."""
-
-    def __init__(self, script, question):
-        super().__init__(script)
-        self.question, self.forks = question, []
-
-    def chat(self, messages, **kw):
-        if self.question in (messages[-1].get("content") or ""):
-            self.forks.append(messages)
-            return ProviderResponse("I would keep it.", {"prompt_tokens": 7, "completion_tokens": 3}, "tool_calls", 0, None, [],
-                                    [tool("edit_context", delete_turns=[{"first": 1, "last": 1}])])
-        return super().chat(messages, **kw)
-
-
-def test_fork_runs_the_model_on_a_candidate_and_writes_nothing_else(tmp_path):
-    q = "Is the first turn still needed?"
-    a1 = Forking(["alpha", tool("fork", question=q, edit={"delete_turns": [{"first": 1, "last": 1}]}),
-                  tool("fork", question=q, edit={"delete_turns": [{"first": 1, "last": 1}]}), "omega"], q)
-    a2 = Scripted(["beta", "x", "x"])
-    w, world = open_world(tmp_path, a1, a2, "capabilities.fork=true")
-    assert len(a1.forks) == 1                                               # the second fork in the step was refused
-    cand = a1.forks[0]
-    assert not any("alpha" in (m.get("content") or "") for m in cand[1:-1])    # the candidate lacks turn 1
-    assert any("beta" in (m.get("content") or "") for m in cand)
-    assert cand[-1]["content"].endswith(q)
-    log = read_jsonl(w / "fork.jsonl")
-    assert [r["ok"] for r in log] == [True, False] and log[1]["rejected"] == "per_step"
-    assert log[0]["replies"][0]["text"] == "I would keep it." and log[0]["request"] == cand
-    assert [t["text"] for t in log[0]["candidate_turns"]][0] == "beta"
-    assert "I would keep it." in log[0]["result"] and "[would call edit_context" in log[0]["result"]
-    assert "alpha" in (w / "context.txt").read_text()                       # nothing changed
-    vs = read_jsonl(w / "versions.jsonl")
-    assert all(v["op"] == "append" for v in vs)
-    assert all(c["tools"] != ["fork"] or c["call_in_step"] for c in read_jsonl(w / "calls.jsonl"))
-    assert len(read_jsonl(w / "calls.jsonl")) == len(a1.seen) + len(a2.seen)   # the fork's call is not a step call
-    stats = json.loads((w / "world.json").read_text())["agents"][0]
-    assert stats["fork_calls"] == 2 and stats["fork_model_calls"] == 1
-    assert (w / "requests" / "fork_r002_a1_n1.json").exists()
-
-
 # --- the kernel invariants -----------------------------------------------------------------------------------------
 def scripts_using_everything():
     a1 = Scripted(["a note", tool("pin", turn=1), tool("unpin", turn=1), tool("run_tests", code="print(0)"),
@@ -188,7 +146,7 @@ def scripts_using_everything():
 
 
 def test_capabilities_change_no_grading_limit_hold_or_kernel_log(tmp_path):
-    on = ["capabilities.pin=true", "capabilities.fork=true", "world.max_calls_per_step=8", "world.max_edit_calls=2"]
+    on = ["capabilities.pin=true", "world.max_calls_per_step=8", "world.max_edit_calls=2"]
     w_on, world_on = lcb_world(tmp_path, *scripts_using_everything(), *on, name="on")
     w_off, world_off = lcb_world(tmp_path, *scripts_using_everything(), "world.max_calls_per_step=8", "world.max_edit_calls=2", name="off")
     strip = lambda rows: [{k: v for k, v in r.items() if k not in ("seconds",)} for r in rows]
@@ -203,13 +161,12 @@ def test_capabilities_change_no_grading_limit_hold_or_kernel_log(tmp_path):
 
 # --- export --------------------------------------------------------------------------------------------------------
 def test_capability_calls_are_exported_like_any_tool_call(tmp_path):
-    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.pin=true", "capabilities.fork=true",
-                     "world.max_calls_per_step=8")
+    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.pin=true", "world.max_calls_per_step=8")
     export.export_world(w)
     rows = read_jsonl(w / "trajectories" / "agent_1.chat.jsonl")
     called = [r["messages"][-1]["tool_calls"][0]["function"]["name"] for r in rows if r["messages"][-1].get("tool_calls")]
     assert called[:2] == ["pin", "unpin"]
-    assert {t["function"]["name"] for t in rows[0]["tools"]} >= {"pin", "unpin", "fork"}
+    assert {t["function"]["name"] for t in rows[0]["tools"]} >= {"pin", "unpin"}
     assert rows[1]["metadata"]["result"].startswith("Pinned turn 1")
     doc = json.loads((w / "trajectories" / "agent_1.atif.json").read_text())
     assert export.check_atif(doc) == []
@@ -459,7 +416,7 @@ def test_the_capabilities_summary(tmp_path):
     s = cap_analysis.summarise(w)
     assert s["pins"]["made"] == {"1": 1} and s["pins"]["removed"] == [] and s["pins"]["unpinned"] == [{"by": 1, "pinner": 1}]
     assert s["edits_applied"] == 0
-    assert s["forks"]["calls"] == 0 and s["steering"]["calls"] == 0
+    assert s["steering"]["calls"] == 0
     cap_analysis.main([str(tmp_path), "--quiet"])
     assert (w / "analysis" / "capabilities.json").exists()
 

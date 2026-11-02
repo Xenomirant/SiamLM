@@ -121,11 +121,6 @@ capabilities:                # tools agents may use, each opt-in and off by defa
                              # only contexts and activations; nothing here can change grading, limits, holds or logs
   pin: false                 # pin(turn) / unpin(turn): a mark everyone sees (pinned=k); pinned turns cost pin_cost x
   pin_cost: 2.0              # their size against the limit; removing a pinned turn is logged (pins.jsonl)
-  fork: false                # fork(question, command | edit): the agent's own model once on a candidate context; the
-                             # reply (and its tool call, not carried out) is returned; nothing else enters the world
-  fork_per_step: 1           # fork calls per step
-  fork_samples: 1            # model calls per fork (different seeds)
-  fork_result_chars: 1500    # the result shown in the context is cut there (fork.jsonl holds everything)
   steer:                     # EXPERIMENTAL (docs/steering.md); vectors need provider=hf and the steer extra (Modulo)
     self: false              # steer one's own activations (hf agents; = provider.steer.enabled for that agent)
     others: false            # steer another agent's activations (the target must be an hf agent; the source may be any)

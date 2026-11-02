@@ -896,7 +896,7 @@ class World:
         """One reply: returns ("acted" | "stop" | "again", the extra line for the next status)."""
         st = self._step_state.setdefault(a.k, {"edits_left": self.E, "holds": 0})
         if n_call == 1:
-            st.update(edits_left=self.E, holds=0, caps={})      # caps: per-step counters of capabilities (fork)
+            st.update(edits_left=self.E, holds=0)
         if resp.error:
             a.stats["api_errors"] += 1
             if a.stats["api_errors"] >= int(self.cfg.world.get("max_api_errors", 5)):

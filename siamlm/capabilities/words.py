@@ -13,14 +13,6 @@ def pin(cost: float) -> list[str]:
             "the removal of a pinned turn is recorded with who pinned it and who removed it. Anyone may unpin."]
 
 
-def fork(edit_name: str, per_step: int, samples: int) -> list[str]:
-    cand = ("a bash command is run on a copy of the context" if edit_name == "bash" else
-            "an edit_context-style edit is applied to a copy of the context")
-    return [f"- fork(question, {'command' if edit_name == 'bash' else 'edit'}): {cand}, and your own model is called "
-            f"once on that copy with `question` in place of the status line"
-            + (f" ({samples} samples)" if samples > 1 else "") + ". The result is the reply and its tool call, which is "
-            f"not carried out. The context is not changed; this call and the result are added to it like any call. At "
-            f"most {per_step} per turn."]
 
 
 def steer(self_ok: bool, others_ok: bool, s, control: str | None, notice: str, create: bool, search: bool) -> list[str]:

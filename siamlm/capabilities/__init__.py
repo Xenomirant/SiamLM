@@ -12,7 +12,7 @@ a call to it like an editing call (it does not count as a work call), writes the
 context and logs it (siamlm/world.py capability_call). An agent without capabilities (the default) is sent exactly
 what it was sent before capabilities existed.
 
-The capabilities: pin / unpin (pin.py), fork (fork.py) and steer (steer.py, EXPERIMENTAL; docs/steering.md): things
+The capabilities: pin / unpin (pin.py) and steer (steer.py, EXPERIMENTAL; docs/steering.md): things
 an agent cannot do for itself (a cost rule in the counting, a model call on an uncommitted context, activations).
 The hooks the world calls are the module functions below; every one of them does nothing for an agent without that
 capability.
@@ -60,9 +60,6 @@ def make_capabilities(pcfg, backend, world=None, agent=None) -> list:
         if caps.get("pin"):
             from .pin import Pin
             out.append(Pin(world, agent))
-        if caps.get("fork"):
-            from .fork import Fork
-            out.append(Fork(world, agent))
     if steer.get("self") or steer.get("others") or own.get("enabled", False):
         from .steer import make_steer
         cap = make_steer(pcfg, backend, world, agent, steer)

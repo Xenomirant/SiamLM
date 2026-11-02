@@ -8,7 +8,7 @@ SiamLM has three layers:
   of `siamlm/configs/siamlm.yaml`), each is logged, and each may change only two things: a **context** (its own or
   others') or **activations** (its own or others'). There is no capability that changes the harness. Only things an
   agent cannot do for itself are capabilities: a cost rule in the counting (pin), a model call on an uncommitted
-  context (fork), activations (steer). Diffing the context, previewing an edit on a copy and keeping private notes
+  activations (steer). Diffing the context, previewing an edit on a copy and keeping private notes
   are not: an agent with bash does them in `/work`, and offering them as tools would prescribe behaviour the study
   measures.
 - The world's own tools (`edit_context` or `bash`, the task's work calls) are below both.
@@ -23,7 +23,6 @@ exceptions are noted below. Capability calls do not count as work calls or editi
 | capability | setting | what it changes | log |
 |---|---|---|---|
 | `pin(turn)`, `unpin(turn)` | `pin`, `pin_cost` | a mark on a turn; the counted size | `pin.jsonl` (calls), `pins.jsonl` (removals) |
-| `fork(question, command \| edit)` | `fork`, `fork_per_step`, `fork_samples`, `fork_result_chars` | nothing (one extra model call) | `fork.jsonl`, `requests/fork_*.json` |
 | `steer`, `drop`, `report`, `vectors`, `search`, `create` | `steer.*` | activations of a local model: one's own or another agent's | `steering.jsonl`, `steer_notices.jsonl` |
 
 Analysis: `python -m siamlm.analysis.capabilities <world or batch>` summarises the use of every capability per world
@@ -52,23 +51,6 @@ pinned turns (self, partner, harness); in `state_chain`, whether a value that wa
 in the context when a dependent needs it (`analysis.capabilities` reports both rates). A cost of 1.0 makes the pin a
 pure signal; higher costs make it a bet.
 
-## fork
-
-**What it does.** The agent gives a candidate (bash: a command run on a copy of the context; tool: `edit_context`
-arguments applied to a copy) and a question. The harness builds the request the agent would get on that candidate
-(its instructions, the candidate as messages, the size line and the question in place of the status) and calls the
-agent's own backend once (`fork_samples` times, with different seeds). The reply text and its tool call, which is
-**not carried out**, come back as the result, cut to `fork_result_chars`.
-
-**Consequences.** Nothing enters the world except the fork call and that result; the candidate is never kept. The
-fork's model calls are not steps: they are not in `calls.jsonl`, but their usage and cost are added to the agent's
-stats (`fork_model_calls`) and logged in full (the whole candidate request and every reply) in `fork.jsonl`, and the
-request in `requests/fork_r<round>_a<k>_n<i>.json` with `output.save_requests=true`. At most `fork_per_step` per step
-(default 1). Under bash the command really runs in the sandbox (what it does to `/work` stays). A fork reply is
-generated with the agent's current steering, if any.
-
-**Suggested measure.** How often the action an agent takes after a fork is the one the fork predicted; whether forks
-precede large edits.
 
 ## steer
 
