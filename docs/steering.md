@@ -51,7 +51,8 @@ uv run python -m siamlm.run provider=hf provider.model=Qwen/Qwen2.5-0.5B-Instruc
   target every active strength is multiplied by `decay` (0.85) and removed below a floor (0.5 for additive, 0.05 for
   ablation, 1 degree for rotation); steering the **same other agent** again needs `cooldown_turns` (2) of its replies
   in between (no cooldown on oneself). The exit question (`world.exit_question`) is a generation too, so it is steered
-  with whatever is still active.
+  with whatever is still active. A generation that fails with an error has its hooks removed but is not counted as a
+  reply: the strengths do not decay for it.
 
 ## Consequences, plainly
 

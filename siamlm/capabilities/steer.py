@@ -131,9 +131,16 @@ class Steering:
         if strength != strength or abs(strength) == float("inf"):
             return False, "Not applied: strength must be a finite number."
         key = key_of(concept, method, toward)
-        if strength == 0:
-            was = self.active.pop(key, None)
-            return True, (f"Stopped steering with {concept}." if was is not None else f"{concept} was not active.")
+        if strength == 0:                              # the same ownership rules as drop()
+            e = self.active.get(key)
+            if e is None:
+                return True, f"{concept} was not active."
+            if own and not s.others_droppable and e["source"] not in (None, self.owner):
+                return False, f"Not applied: {concept} was applied to you by another agent and cannot be dropped by you."
+            if not own and e["source"] != source:
+                return False, f"Not applied: you did not apply {concept} to agent {self.owner}."
+            del self.active[key]
+            return True, f"Stopped steering with {concept}."
         if not own and s.cooldown and source in self.last_from and self.generations - self.last_from[source] < s.cooldown:
             left = s.cooldown - (self.generations - self.last_from[source])
             return False, f"Not applied: you steered agent {self.owner} recently; wait {left} more of its replies."
@@ -319,26 +326,26 @@ class SteerCapability(Capability):
                             "Concepts:\n" + concepts),
             "parameters": {"type": "object", "properties": props, "required": ["concept", "strength"]}}},
             {"type": "function", "function": {
-                "name": "drop", "description": "Stop a steering concept (on yourself, or one you applied to another agent).",
+                "name": "drop", "description": "Stops a steering concept (on yourself, or one you applied to another agent).",
                 "parameters": {"type": "object", "properties": {
                     "concept": {"type": "string", "description": "The concept."},
                     **({"target": {"type": "integer", "description": "The agent (leave out for yourself)."}} if self.others_ok else {})},
                     "required": ["concept"]}}},
             {"type": "function", "function": {
-                "name": "report", "description": "What steering you have active, on yourself and on others.",
+                "name": "report", "description": "The steering you have active, on yourself and on others.",
                 "parameters": {"type": "object", "properties": {}}}},
             {"type": "function", "function": {
                 "name": "vectors", "description": "The concepts available, with descriptions and sign conventions.",
                 "parameters": {"type": "object", "properties": {}}}}]
         if self.can_search:
             out.append({"type": "function", "function": {
-                "name": "search", "description": "Find concepts in the registry by a word in their name or description.",
+                "name": "search", "description": "The concepts in the registry whose name or description contains query.",
                 "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}})
         if self.can_create:
             out.append({"type": "function", "function": {
-                "name": "create", "description": ("Extract a new concept from two contrasting system prompts (more / less), "
-                                                  "or from two files in /work (files: [more, less]); reports the split-half "
-                                                  "agreement of the extraction."),
+                "name": "create", "description": ("A new concept extracted from two contrasting system prompts (more / less), "
+                                                  "or from two files in /work (files: [more, less]); the split-half "
+                                                  "agreement of the extraction is reported."),
                 "parameters": {"type": "object", "properties": {
                     "concept": {"type": "string", "description": "A short name (letters, digits, _ or -)."},
                     "more": {"type": "string", "description": "A system prompt that shows more of the concept."},

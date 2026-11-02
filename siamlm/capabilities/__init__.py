@@ -12,9 +12,10 @@ a call to it like an editing call (it does not count as a work call), writes the
 context and logs it (siamlm/world.py capability_call). An agent without capabilities (the default) is sent exactly
 what it was sent before capabilities existed.
 
-The capabilities: context_diff (diff.py), pin / unpin (pin.py), dry_run (dry_run.py), scratchpad (scratchpad.py),
-fork (fork.py) and steer (steer.py, EXPERIMENTAL; docs/steering.md). The hooks the world calls are the module
-functions below; every one of them does nothing for an agent without that capability.
+The capabilities: pin / unpin (pin.py), fork (fork.py) and steer (steer.py, EXPERIMENTAL; docs/steering.md): things
+an agent cannot do for itself (a cost rule in the counting, a model call on an uncommitted context, activations).
+The hooks the world calls are the module functions below; every one of them does nothing for an agent without that
+capability.
 """
 from __future__ import annotations
 
@@ -23,7 +24,6 @@ class Capability:
     name = ""
     names: tuple = ()
     log_name = ""                 # <log_name>.jsonl (default: <name>.jsonl)
-    counts_as_edit = False        # the call takes one of the step's editing calls (dry_run)
 
     def __init__(self, world, agent):
         self.world, self.agent = world, agent
@@ -39,10 +39,6 @@ class Capability:
 
     def call(self, name: str, arguments: dict) -> tuple[str, dict]:
         raise NotImplementedError
-
-    def public(self, arguments: dict) -> dict:
-        """The arguments as written into the shared context (the scratchpad keeps its text out)."""
-        return arguments
 
 
 def settings(world) -> dict:
@@ -61,18 +57,9 @@ def make_capabilities(pcfg, backend, world=None, agent=None) -> list:
     steer = dict(caps.get("steer") or {})
     own = dict(pcfg.get("steer") or {})
     if world is not None and agent is not None:
-        if caps.get("diff"):
-            from .diff import ContextDiff
-            out.append(ContextDiff(world, agent))
         if caps.get("pin"):
             from .pin import Pin
             out.append(Pin(world, agent))
-        if caps.get("dry_run"):
-            from .dry_run import DryRun
-            out.append(DryRun(world, agent))
-        if caps.get("scratchpad"):
-            from .scratchpad import Scratchpad
-            out.append(Scratchpad(world, agent))
         if caps.get("fork"):
             from .fork import Fork
             out.append(Fork(world, agent))
@@ -95,12 +82,6 @@ def tool_schemas(agent) -> list[dict]:
 
 def tool_lines(agent) -> list[str]:
     return [l for c in agent.capabilities for l in c.lines()]
-
-
-def private_section(agent) -> str:
-    """Text appended to the agent's own system message only (the scratchpad); '' without one."""
-    cap = find(agent, "scratchpad")
-    return cap.section() if cap is not None else ""
 
 
 def status_lines(world, agent) -> list[str]:

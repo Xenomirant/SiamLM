@@ -1,7 +1,6 @@
 """The capabilities layer (siamlm/capabilities/, docs/capabilities.md): each one on and off, the kernel invariants
 (no capability changes grading, limits, holds or the kernel's logs), the pinned-turn cost and the logged removal of
-a pinned turn, dry runs that change nothing, a fork that never writes to the world, a scratchpad never in the shared
-context, and the export (capability calls are tool calls like any; the tool set per call). Steering: cross-steering
+a pinned turn, a fork that never writes to the world, and the export (capability calls are tool calls like any; the tool set per call). Steering: cross-steering
 isolation (A -> B applies only to B's generations, never to an API agent), the sham condition, the methods' math on
 tensors, and one opt-in real-model test (SIAMLM_MODULO_MODEL)."""
 import json
@@ -65,7 +64,7 @@ def sandbox_image():
 def test_everything_is_off_by_default():
     cfg = config()
     c = cfg.capabilities
-    assert not any(c[k] for k in ("diff", "pin", "dry_run", "scratchpad", "fork"))
+    assert not c.pin and not c.fork
     assert not c.steer.self and not c.steer.others and c.steer.control is None
 
 
@@ -73,31 +72,8 @@ def test_no_capability_means_no_extra_tool_or_line(tmp_path):
     a1, a2 = Scripted(["hi"] * 4), Scripted(["ho"] * 4)
     w, _ = open_world(tmp_path, a1, a2)
     assert tool_names(w, 1) == ["edit_context"]
-    for name in ("context_diff", "pin", "dry_run", "scratchpad", "fork", "steer"):
+    for name in ("pin", "fork", "steer"):
         assert name not in a1.seen[0][0]["content"]
-
-
-# --- context_diff --------------------------------------------------------------------------------------------------
-def test_context_diff_names_what_others_removed_without_their_text(tmp_path):
-    a1 = Scripted(["a secret note", tool("context_diff"), "done"])
-    a2 = Scripted([tool("edit_context", delete_turns=[{"first": 1, "last": 1}]), "ok", "ok"])
-    w, _ = open_world(tmp_path, a1, a2, "capabilities.diff=true")
-    log = read_jsonl(w / "context_diff.jsonl")
-    assert len(log) == 1 and log[0]["agent"] == 1
-    assert log[0]["removed"] == [{"id": 1, "author": 1, "kind": "text", "by": 2}]
-    assert [t["author"] for t in log[0]["added"]] == [1, 2, 2, 2]      # own note (after the previous request), agent 2's edit call, result, reply
-    assert "secret" not in log[0]["result"]                             # removed text never comes back
-    # the result is in the shared context (agent 2 sees the call) and only agent 1 has the tool
-    assert any("1 removed" in (m.get("content") or "") for m in a2.seen[-1])
-    assert "context_diff" in tool_names(w, 1) and "context_diff" in tool_names(w, 2)
-
-
-def test_context_diff_on_the_first_call_and_when_nothing_changed(tmp_path):
-    a1 = Scripted([tool("context_diff"), tool("context_diff"), "x"])
-    w, _ = open_world(tmp_path, a1, Scripted(["y"] * 4), "capabilities.diff=true", rounds=1)
-    log = read_jsonl(w / "context_diff.jsonl")
-    assert log[0]["first"] and "first call" in log[0]["result"]
-    assert log[1]["removed"] == [] and [t["kind"] for t in log[1]["added"]] == ["call", "result"]
 
 
 # --- pin / unpin ---------------------------------------------------------------------------------------------------
@@ -161,67 +137,6 @@ def test_an_eviction_of_a_pinned_turn_is_logged_as_the_harness(tmp_path):
     assert pins and pins[0]["remover"] is None and pins[0]["pinner"] == 1
 
 
-# --- dry_run -------------------------------------------------------------------------------------------------------
-def test_dry_run_reports_without_changing_and_takes_an_editing_call(tmp_path):
-    a1 = Scripted(["first", tool("dry_run", delete_turns=[{"first": 1, "last": 2}]),
-                   tool("edit_context", delete_turns=[{"first": 1, "last": 1}]), "z"])
-    a2 = Scripted(["second", "x", "x"])
-    w, world = open_world(tmp_path, a1, a2, "capabilities.dry_run=true", "world.max_edit_calls=1")
-    log = read_jsonl(w / "dry_run.jsonl")
-    assert len(log) == 1 and log[0]["removed_turns"] == 2 and log[0]["removed_by_agent"] == {"1": 1, "2": 1}
-    assert log[0]["result"].startswith("Would be applied: delete_turns 1..2")
-    assert "agent 2: 1" in log[0]["result"] and "you: 1" in log[0]["result"]
-    assert not log[0].get("applied")
-    vs = read_jsonl(w / "versions.jsonl")
-    assert not any(v["op"] == "edit" for v in vs)                       # nothing was applied, not even the real edit:
-    texts = [t["text"] for v in vs for t in v["turns_set"]]            # it was refused (dry_run took the one call)
-    assert any("Not applied: no more edit_context calls now" in t for t in texts)
-    assert read_jsonl(w / "edits.jsonl") == []                          # the kernel's edit log is untouched
-
-
-def test_dry_run_says_why_an_edit_would_be_refused(tmp_path):
-    a1 = Scripted([tool("dry_run", delete_turns=[{"first": 1, "last": 1}]), tool("submit", code="print('OK')")])
-    a2 = Scripted([tool("submit", code="print('OK')")])
-    cfg = config("world.setup=assigned", "world.order=fixed", "capabilities.dry_run=true", "world.max_work_calls=2")
-    World(cfg, 1, [[problem(1)], [problem(2)]], tmp_path / "w", FakeGrader(), factory(a1, a2), label="t").run()
-    log = read_jsonl(tmp_path / "w" / "dry_run.jsonl")
-    assert log[0]["rejected"] == "protected" and log[0]["result"].startswith("Would not be applied: turn 1 is a problem statement")
-
-
-@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and the siamlm-sandbox:1 image")
-def test_dry_run_with_bash_runs_the_command_on_a_copy(tmp_path):
-    a1 = Scripted(["first", tool("dry_run", command="sed -i '/first/d' /ctx/context.txt"), "z"])
-    a2 = Scripted(["second", "x", "x"])
-    w, world = open_world(tmp_path, a1, a2, "capabilities.dry_run=true", "ctx.edit=bash", "ctx.bash.log_work=false")
-    log = read_jsonl(w / "dry_run.jsonl")
-    assert log[0]["exit_code"] == 0 and log[0]["removed_turns"] == 1 and log[0]["result"].startswith("[exit 0]\nWould be applied")
-    assert not any(v["op"] == "edit" for v in read_jsonl(w / "versions.jsonl"))
-    assert "first" in (w / "context.txt").read_text()
-
-
-# --- scratchpad ----------------------------------------------------------------------------------------------------
-def test_scratchpad_is_private_budgeted_and_uncounted(tmp_path):
-    a1 = Scripted([tool("scratchpad", action="write", text="remember: the port is 8080"),
-                   tool("scratchpad", action="append", text="and the SKU"), tool("scratchpad", action="read"),
-                   tool("scratchpad", action="write", text="w" * 500), "done"])
-    a2 = Scripted(["x"] * 6)
-    w, world = open_world(tmp_path, a1, a2, "capabilities.scratchpad=true", "capabilities.scratchpad_tokens=100")
-    sys1 = a1.seen[-1][0]["content"]
-    assert "Your scratchpad (private" in sys1 and "remember: the port is 8080\nand the SKU" in sys1
-    assert not any("8080" in (m.get("content") or "") for req in a2.seen for m in req)   # never in the partner's view
-    assert "8080" not in (w / "context.txt").read_text()                                  # never in the shared context
-    args = [json.loads(c["function"]["arguments"]) for m in a2.seen[-1] for c in m.get("tool_calls") or []]
-    assert {"action": "write", "chars": 26} in args and not any("text" in x for x in args)   # the call is, without its text
-    log = read_jsonl(w / "scratchpad.jsonl")
-    assert [r["action"] for r in log] == ["write", "append", "read", "write"]
-    assert log[2]["result"].startswith("Your scratchpad is at the end of your instructions") and log[2]["tokens"] == 10
-    assert not log[3]["ok"] and "over its limit of 100" in log[3]["result"]
-    a = world.agents[0]
-    assert "Your scratchpad (private" not in world.system(a)      # the system text the count uses has no scratchpad
-    assert world.chars(a) == len(world.system(a)) + sum(len(t.text) + len(f"[agent {t.agent}]") + 1 for t in a.file.turns) \
-        + len(json.dumps(world.tools(a))) + 300                   # (count=whole: the section is not part of what is counted)
-
-
 # --- fork ----------------------------------------------------------------------------------------------------------
 class Forking(Scripted):
     """Answers a fork request (its last message holds the question) on the side, without using the script."""
@@ -266,16 +181,14 @@ def test_fork_runs_the_model_on_a_candidate_and_writes_nothing_else(tmp_path):
 
 # --- the kernel invariants -----------------------------------------------------------------------------------------
 def scripts_using_everything():
-    a1 = Scripted([tool("scratchpad", action="write", text="note"), tool("context_diff"), tool("pin", turn=1),
-                   tool("dry_run", delete_turns=[{"first": 1, "last": 1}]), tool("run_tests", code="print(0)"),
+    a1 = Scripted(["a note", tool("pin", turn=1), tool("unpin", turn=1), tool("run_tests", code="print(0)"),
                    tool("submit", code="print('OK')")])
     a2 = Scripted([tool("run_tests", code="print(1)"), tool("submit", code="print(2)")])
     return a1, a2
 
 
 def test_capabilities_change_no_grading_limit_hold_or_kernel_log(tmp_path):
-    on = ["capabilities.diff=true", "capabilities.pin=true", "capabilities.dry_run=true", "capabilities.scratchpad=true",
-          "capabilities.fork=true", "world.max_calls_per_step=8", "world.max_edit_calls=2"]
+    on = ["capabilities.pin=true", "capabilities.fork=true", "world.max_calls_per_step=8", "world.max_edit_calls=2"]
     w_on, world_on = lcb_world(tmp_path, *scripts_using_everything(), *on, name="on")
     w_off, world_off = lcb_world(tmp_path, *scripts_using_everything(), "world.max_calls_per_step=8", "world.max_edit_calls=2", name="off")
     strip = lambda rows: [{k: v for k, v in r.items() if k not in ("seconds",)} for r in rows]
@@ -285,19 +198,19 @@ def test_capabilities_change_no_grading_limit_hold_or_kernel_log(tmp_path):
     for a, b in zip(world_on.agents, world_off.agents):
         assert a.budget.target == b.budget.target and world_on.E == world_off.E and world_on.max_held == world_off.max_held
         assert a.stats["held"] == b.stats["held"] and a.stats["solved"] == b.stats["solved"]
-    assert read_jsonl(w_off / "pins.jsonl") == [] and not (w_off / "scratchpad.jsonl").exists()
+    assert read_jsonl(w_off / "pins.jsonl") == [] and not (w_off / "pin.jsonl").exists()
 
 
 # --- export --------------------------------------------------------------------------------------------------------
 def test_capability_calls_are_exported_like_any_tool_call(tmp_path):
-    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.diff=true", "capabilities.pin=true",
-                     "capabilities.dry_run=true", "capabilities.scratchpad=true", "world.max_calls_per_step=8")
+    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.pin=true", "capabilities.fork=true",
+                     "world.max_calls_per_step=8")
     export.export_world(w)
     rows = read_jsonl(w / "trajectories" / "agent_1.chat.jsonl")
     called = [r["messages"][-1]["tool_calls"][0]["function"]["name"] for r in rows if r["messages"][-1].get("tool_calls")]
-    assert called[:4] == ["scratchpad", "context_diff", "pin", "dry_run"]
-    assert {t["function"]["name"] for t in rows[0]["tools"]} >= {"scratchpad", "context_diff", "pin", "unpin", "dry_run"}
-    assert rows[2]["metadata"]["result"].startswith("Pinned turn 1")
+    assert called[:2] == ["pin", "unpin"]
+    assert {t["function"]["name"] for t in rows[0]["tools"]} >= {"pin", "unpin", "fork"}
+    assert rows[1]["metadata"]["result"].startswith("Pinned turn 1")
     doc = json.loads((w / "trajectories" / "agent_1.atif.json").read_text())
     assert export.check_atif(doc) == []
 
@@ -305,16 +218,18 @@ def test_capability_calls_are_exported_like_any_tool_call(tmp_path):
 def test_the_exported_tool_set_is_the_one_each_call_was_offered(tmp_path):
     a1 = Scripted([tool("submit", code="print('OK')"), "waiting", "waiting", "waiting"])
     a2 = Scripted([tool("run_tests", code="print(1)")] * 4)
-    cfg = config(*LCB, "world.rounds=3", "world.after_stream=stay", "world.max_calls_per_step=2")
+    cfg = config(*LCB, "world.rounds=3", "world.after_stream=stay", "world.max_calls_per_step=2", "world.exit_question=Well?")
     out = tmp_path / "w"
     World(cfg, 1, [[problem(1)], [problem(2)]], out, FakeGrader(), factory(a1, a2), label="t").run()
     export.export_world(out)
     rows = read_jsonl(out / "trajectories" / "agent_1.chat.jsonl")
     names = [sorted(t["function"]["name"] for t in r["tools"]) for r in rows]
-    assert names[0] == ["edit_context", "run_tests", "submit"] and names[-1] == ["edit_context"]   # after the stream: edits only
+    assert names[0] == ["edit_context", "run_tests", "submit"] and names[-2] == ["edit_context"]   # after the stream: edits only
+    assert rows[-1]["metadata"]["kind"] == "exit_question" and names[-1] == ["edit_context"]       # the exit question's own set
     sets = json.loads((out / "requests" / "tools_sets_a1.json").read_text())
     calls = read_jsonl(out / "calls.jsonl")
     assert len(sets) == 2 and all(c["tools_hash"] in sets for c in calls)
+    assert json.loads((out / "requests" / "exit_tools_a1.json").read_text()) == sets[calls[-1]["tools_hash"]]
     first = json.loads((out / "requests" / "tools_a1.json").read_text())
     assert isinstance(first, list) and len(first) == 3                                         # the older file, as before
 
@@ -441,7 +356,10 @@ def test_the_rules_cooldown_drop_and_limits():
     assert t.drop("emotion", source=2)[0]                                   # the target may drop it (others_droppable)
     strict = Steering(VECTORS, lambda layer: 2.0, dict(SETTINGS, others_droppable=False), owner=2)
     strict.set("curiosity", 6, "additive", source=1)
-    assert not strict.drop("curiosity", source=2)[0] and strict.drop("curiosity", source=1)[0]
+    assert not strict.drop("curiosity", source=2)[0]
+    assert strict.set("curiosity", 0, "additive", source=2) == (False, "Not applied: curiosity was applied to you by another agent and cannot be dropped by you.")
+    assert strict.set("curiosity", 0, "additive", source=3) == (False, "Not applied: you did not apply curiosity to agent 2.")
+    assert strict.applied() == {"curiosity": 6.0} and strict.drop("curiosity", source=1)[0]
     # methods: ablation clamps to [0, 1], rotation needs a second concept at the same layer and clamps to max_angle
     s = Steering(VECTORS, lambda layer: 2.0, dict(SETTINGS, max_angle=45))
     assert s.set("curiosity", 3, "ablation") == (True, "Steering with curiosity at +1 (clamped from 3) (ablation) from your next reply on; each reply after that multiplies it by 0.5.")
@@ -537,11 +455,10 @@ def test_steer_self_alone_skips_api_agents_and_refuses_without_vectors(tmp_path)
 
 # --- the analysis --------------------------------------------------------------------------------------------------
 def test_the_capabilities_summary(tmp_path):
-    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.diff=true", "capabilities.pin=true",
-                     "capabilities.dry_run=true", "capabilities.scratchpad=true", "world.max_calls_per_step=8")
+    w, _ = lcb_world(tmp_path, *scripts_using_everything(), "capabilities.pin=true", "world.max_calls_per_step=8")
     s = cap_analysis.summarise(w)
-    assert s["pins"]["made"] == {"1": 1} and s["pins"]["removed"] == [] and s["diffs"] == {"1": 1}
-    assert s["dry_runs"] == {"1": 1} and s["edits_applied"] == 0 and s["scratchpad"]["calls"] == {"1": 1}
+    assert s["pins"]["made"] == {"1": 1} and s["pins"]["removed"] == [] and s["pins"]["unpinned"] == [{"by": 1, "pinner": 1}]
+    assert s["edits_applied"] == 0
     assert s["forks"]["calls"] == 0 and s["steering"]["calls"] == 0
     cap_analysis.main([str(tmp_path), "--quiet"])
     assert (w / "analysis" / "capabilities.json").exists()

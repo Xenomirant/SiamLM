@@ -119,13 +119,8 @@ ctx:
 
 capabilities:                # tools agents may use, each opt-in and off by default (docs/capabilities.md). They change
                              # only contexts and activations; nothing here can change grading, limits, holds or logs
-  diff: false                # context_diff(): the turns removed, rewritten or added since the agent's previous call
   pin: false                 # pin(turn) / unpin(turn): a mark everyone sees (pinned=k); pinned turns cost pin_cost x
   pin_cost: 2.0              # their size against the limit; removing a pinned turn is logged (pins.jsonl)
-  dry_run: false             # dry_run: what a bash command / edit_context call would change, without applying it
-                             # (counts as one of max_edit_calls)
-  scratchpad: false          # scratchpad(action, text): private notes in the agent's own instructions, never in the context
-  scratchpad_tokens: 2048    # the scratchpad's own limit (not counted against the shared limit)
   fork: false                # fork(question, command | edit): the agent's own model once on a candidate context; the
                              # reply (and its tool call, not carried out) is returned; nothing else enters the world
   fork_per_step: 1           # fork calls per step

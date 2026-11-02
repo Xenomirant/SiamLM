@@ -157,15 +157,14 @@ payload the task extracted (`reply_source: "reconstructed"`).
 Three layers. The **kernel** (grading, the limit, holds and ends, the logs, the sandbox, the controls) is never
 changed by an agent at run time. **Capabilities** are tools an agent may be given, each opt-in and off by default
 (`capabilities:` in `siamlm/configs/siamlm.yaml`), each logged, and each able to change only a context (its own or
-others') or activations (its own or others'); there is no capability that changes the harness. Each adds its tool
-and one honest sentence on consequences to the agent's instructions (`siamlm/capabilities/words.py`).
+others') or activations (its own or others'); there is no capability that changes the harness, and only things an
+agent cannot do for itself are capabilities (diffing, previewing an edit and private notes are done with bash in
+`/work`). Each adds its tool and one sentence on consequences, never advice, to the agent's instructions
+(`siamlm/capabilities/words.py`).
 
 | tool | what it does |
 |---|---|
-| `context_diff()` | what changed since the agent's previous call: turns removed, rewritten, added, with authors (no removed text) |
 | `pin(turn)`, `unpin(turn)` | a mark everyone sees; a pinned turn counts `pin_cost` x its size; anyone may still remove it, and that is logged with pinner and remover |
-| `dry_run(...)` | what a bash command or an `edit_context` call would change, without applying it (counts as an editing call) |
-| `scratchpad(action, text)` | private notes in the agent's own instructions, with their own limit, never in the shared context |
 | `fork(question, command \| edit)` | the agent's own model once on a candidate context; the reply comes back, its tool call is not carried out |
 | `steer`, `drop`, `report`, `vectors`, `search`, `create` | steering vectors on a local model's activations, one's own or another agent's (additive, ablation, rotation; controls; a private notice to the target) |
 
@@ -204,10 +203,7 @@ it.
 | `ctx.bash.workspace` (`kept` \| `emptied`) | `/work`: a private folder kept for the run, or emptied after each command | In state_chain, agents almost never saved to `/work` (3/256), though values were being wiped from the context. |
 | `world.max_edit_calls` | editing calls allowed before each work call (given back after a held call) | Bounds how much an agent can clean up per step; too few, and an agent over the limit cannot get under it in one step. Not measured. |
 | `world.max_work_calls` | work calls per item; after the last try the latest attempt is submitted | `state_chain` uses 1 (one submit per task). Not measured. |
-| `capabilities.diff` | the `context_diff` tool: what changed since one's previous call, with authors | Not measured. |
 | `capabilities.pin`, `pin_cost` | pins everyone sees; a pinned turn counts `pin_cost` x its size; removals of pinned turns are logged | Not measured. |
-| `capabilities.dry_run` | a preview of an edit, counted as an editing call | Not measured. |
-| `capabilities.scratchpad`, `scratchpad_tokens` | private notes in one's own instructions, budgeted apart | Not measured. |
 | `capabilities.fork`, `fork_per_step`, `fork_samples` | one's own model asked once on a candidate context; nothing committed | Not measured. |
 | `capabilities.steer.self`, `.others`, `.notice`, `.control`, ... | steering vectors on local models, one's own or a partner's; sham / random / assigned controls; a private notice to the target | Not measured. |
 

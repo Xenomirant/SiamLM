@@ -34,10 +34,10 @@ class Pin(Capability):
                 "required": ["turn"]}
         return [{"type": "function", "function": {
                     "name": "pin", "parameters": turn,
-                    "description": (f"Pin a turn: everyone sees it as pinned by you, and it counts {self.world.pin_cost:g}x "
-                                    "its size against the limit. It can still be changed or removed by anyone.")}},
+                    "description": (f"Marks a turn as pinned by you, which everyone sees; it then counts {self.world.pin_cost:g}x "
+                                    "its size against the limit. It can be changed or removed by anyone, like any turn.")}},
                 {"type": "function", "function": {
-                    "name": "unpin", "parameters": turn, "description": "Remove the pin from a turn (anyone may)."}}]
+                    "name": "unpin", "parameters": turn, "description": "Removes the pin from a turn (anyone may)."}}]
 
     def lines(self) -> list[str]:
         return words.pin(self.world.pin_cost)

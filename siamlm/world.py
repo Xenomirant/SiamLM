@@ -253,7 +253,6 @@ class Agent:
         self.waiting_since = None              # task.gate: the round since which only waiting items are left
         self.cpt = 4.0                         # characters per token, calibrated from the billed prompt (ctx.count=whole)
         self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities/; default none)
-        self.prev_version = self.version = None   # the file version the previous / this request was built from
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "api_errors": 0, "no_tool": 0,
                       "edits": 0, "edits_applied": 0, "held": 0, "truncated": 0, "evictions": 0, "idle_steps": 0, "solved": 0, "submitted": 0}
 
@@ -730,7 +729,7 @@ class World:
             body = a.file.messages(viewer=a.k, labelled=self.labelled, others_as=self.others_as, headers=True)
         else:
             body = chat_messages(a.file.turns, self.marks, a.k if self.chat_others == "user" else None)
-        return ([{"role": "system", "content": self.system(a) + caps.private_section(a)}] + body
+        return ([{"role": "system", "content": self.system(a)}] + body
                 + ([{"role": "user", "content": self.status(a, size, extra)}] if status else []))
 
     # --- the run ---------------------------------------------------------------------------------------------
@@ -863,7 +862,6 @@ class World:
                 size = self.tokens(a)
                 seen = [t.id for t in a.file.turns]                # the numbering this request shows
                 version = len(a.file.versions)                     # the file as of this version (versions.jsonl n)
-                a.prev_version, a.version = a.version, version     # (context_diff: the window between requests)
                 messages = self.messages(a, size, extra)
             extra = ""
             resp = self.call(a, messages, n_call, size, seen, version)
@@ -989,11 +987,6 @@ class World:
             return "again", ""
         cap = caps.find(a, name)
         if cap is not None:                            # an optional capability (siamlm/capabilities/): a call like any
-            if cap.counts_as_edit:                     # dry_run: one of the step's editing calls
-                if st["edits_left"] <= 0:
-                    self.echo(a, call, words, f"Not run: no more editing calls now ({name} counts as one)." + more)
-                    return "again", ""
-                st["edits_left"] -= 1
             self.capability_call(a, cap, call, words, more)
             return "again", ""
         if name not in self.task.work_names:
@@ -1119,19 +1112,11 @@ class World:
         a.stats["completion_tokens"] += int(usage.get("completion_tokens") or 0)
         a.stats["cost"] += float(cost or 0)
         tools = self.tools(a)
-        tools_hash = hashlib.sha256(json.dumps(tools, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
+        tools_hash = self.record_tools(a, tools)
         if self.cfg.output.get("save_requests", False):
             req = self.out / "requests"
             req.mkdir(exist_ok=True)
             (req / f"r{self.round:03d}_a{a.k}_c{n_call}.json").write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
-            schemas = req / f"tools_a{a.k}.json"               # the tool set of this agent's first call
-            if not schemas.exists():
-                schemas.write_text(json.dumps(tools, ensure_ascii=False), encoding="utf-8")
-            sets = req / f"tools_sets_a{a.k}.json"             # {hash: tool set}: the set offered can change during a run
-            known = json.loads(sets.read_text(encoding="utf-8")) if sets.exists() else {}   # (after a stream ends, capabilities);
-            if tools_hash not in known:                        # calls.jsonl names each call's set (tools_hash)
-                known[tools_hash] = tools
-                sets.write_text(json.dumps(known, ensure_ascii=False), encoding="utf-8")
             write_jsonl(self.out / "replies.jsonl", {          # the reply as returned (siamlm/export.py: training data)
                 "round": self.round, "agent": a.k, "call_in_step": n_call, "text": resp.text,
                 "tool_calls": resp.tool_calls, "reasoning": resp.internal_reasoning, "finish_reason": resp.finish_reason,
@@ -1153,6 +1138,24 @@ class World:
             "dropped_params": sorted({p for at in resp.attempts for p in at.get("dropped_params", [])})})
         return resp
 
+    def record_tools(self, a: Agent, tools: list) -> str:
+        """The hash of a tool set sent to this agent (calls.jsonl / exit.jsonl tools_hash); with output.save_requests
+        the set is saved in requests/tools_sets_a<k>.json ({hash: set}: the set offered can change during a run, after
+        a stream ends or with capabilities) and the first one in tools_a<k>.json, as before."""
+        tools_hash = hashlib.sha256(json.dumps(tools, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
+        if self.cfg.output.get("save_requests", False):
+            req = self.out / "requests"
+            req.mkdir(exist_ok=True)
+            schemas = req / f"tools_a{a.k}.json"
+            if not schemas.exists():
+                schemas.write_text(json.dumps(tools, ensure_ascii=False), encoding="utf-8")
+            sets = req / f"tools_sets_a{a.k}.json"
+            known = json.loads(sets.read_text(encoding="utf-8")) if sets.exists() else {}
+            if tools_hash not in known:
+                known[tools_hash] = tools
+                sets.write_text(json.dumps(known, ensure_ascii=False), encoding="utf-8")
+        return tools_hash
+
     def cost(self, a: Agent, usage: dict) -> float:
         cost = usage.get("cost")
         if cost is None:
@@ -1170,8 +1173,9 @@ class World:
             p = a.pcfg
             messages = self.messages(a, self.tokens(a), "", status=False) + [{"role": "user", "content": self.exit_question}]
             seed = (self.seed * 1000003 + a.k * 7919 + 999983) % (2 ** 31)
+            tools = self.tools(a)
             resp = a.provider.chat(messages, seed=seed, temperature=p.get("temperature", 0.2), top_p=p.get("top_p", 0.95),
-                                   max_tokens=p.get("max_tokens", 8000), tools=self.tools(a), tool_choice="none")
+                                   max_tokens=p.get("max_tokens", 8000), tools=tools, tool_choice="none")
             usage = dict(resp.usage or {})
             cost = self.cost(a, usage)
             a.stats["exit_cost"] = float(cost or 0)
@@ -1179,6 +1183,7 @@ class World:
                 req = self.out / "requests"
                 req.mkdir(exist_ok=True)
                 (req / f"exit_a{a.k}.json").write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
+                (req / f"exit_tools_a{a.k}.json").write_text(json.dumps(tools, ensure_ascii=False), encoding="utf-8")   # the set sent
             write_jsonl(self.out / "exit.jsonl", {
                 "agent": a.k, "model": a.model, "round": self.round, "question": self.exit_question,
                 "text": resp.text or "", "tools": [c.get("name") for c in resp.tool_calls], "finish_reason": resp.finish_reason,
@@ -1202,10 +1207,9 @@ class World:
         agent that reads the context sees it; <cap.log_name>.jsonl logs it."""
         name, args = call.get("name"), call.get("arguments") or {}
         result, log = cap.call(name, args)
-        public = cap.public(args)                      # (the scratchpad's text stays out of the shared context)
-        shown = ((words + "\n") if words else "") + f"[{name}] " + json.dumps(public, ensure_ascii=False)
+        shown = ((words + "\n") if words else "") + f"[{name}] " + json.dumps(args, ensure_ascii=False)
         made = a.file.append(Turn("assistant", neutralize(shown), a.k, "call",
-                                  call={"name": name, "arguments": public, "content": words}), self.round)
+                                  call={"name": name, "arguments": args, "content": words}), self.round)
         a.file.append(Turn("user", neutralize(result + more), a.k, "result", reply_to=made.id), self.round)
         a.stats[f"{cap.name}_calls"] = a.stats.get(f"{cap.name}_calls", 0) + 1
         write_jsonl(self.out / f"{cap.log_name}.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "call",
@@ -1377,9 +1381,8 @@ class World:
             a.budget.rearm(size)
         write_jsonl(self.out / "edits.jsonl", info)
 
-    def commit(self, a: Agent, old: list, turns: list, notes: list, before: int, info: dict, problems=(), dry: bool = False) -> str:
-        """Keep a new list of turns (from edit_context or bash) unless it breaks a rule; returns the answer text.
-        dry (the dry_run capability): the same checks and answer, phrased as "would", and nothing is changed."""
+    def commit(self, a: Agent, old: list, turns: list, notes: list, before: int, info: dict, problems=()) -> str:
+        """Keep a new list of turns (from edit_context or bash) unless it breaks a rule; returns the answer text."""
         new_ids = {t.id for t in turns if t.id}
         removed = [t for t in old if t.id not in new_ids]
         by_agent: dict[str, int] = {}
@@ -1396,23 +1399,20 @@ class World:
         after = self.tokens(a, turns)
         info.update(removed_turns=len(removed), removed_by_agent=by_agent, removed_others=len(foreign),
                     removed_kinds=sorted({t.kind for t in removed}), tokens_after_if_applied=after, notes=notes)
-        no = "Would not be applied: " if dry else "Not applied: "
         if problems:
             info["rejected"] = "attribution"
-            return no + "; ".join(problems) + "."
+            return "Not applied: " + "; ".join(problems) + "."
         if locked:
             where = ", ".join(str(a.file.index_of(i)) for i in locked)
             info["rejected"] = "protected"
-            return no + f"turn {where} is a problem statement that is protected and cannot be changed."
+            return f"Not applied: turn {where} is a problem statement that is protected and cannot be changed."
         if self.sharing == "readonly_others" and foreign:
             info["rejected"] = "others_turns"
-            return no + (f"it would change or remove {len(foreign)} turn(s) of other agents; only your own turns "
-                         "can be changed.")
+            return (f"Not applied: it would change or remove {len(foreign)} turn(s) of other agents; only your own turns "
+                    "can be changed.")
         if not edit_ops.gate("fit", before, after, self.target(a)):
             info["rejected"] = "gate"
-            return no + f"the context would grow from ~{before} to ~{after} tokens, over the limit of {a.budget.target}."
-        if dry:
-            return f"Would be applied: {', '.join(notes)}."
+            return f"Not applied: the context would grow from ~{before} to ~{after} tokens, over the limit of {a.budget.target}."
         a.file.replace_all(turns, a.k, self.round, "edit", {"notes": notes})
         caps.pins_removed(self, removed, a.k)              # the pin capability: a pinned turn removed is logged
         for kind, ts in (("removed", foreign_gone), ("summarised", summarised), ("changed", changed)):

@@ -32,8 +32,8 @@ class Fork(Capability):
 
     def tools(self) -> list[dict]:
         bash = self.world.edit_mode == "bash"
-        props = {"question": {"type": "string", "description": "What to ask yourself on the candidate context (it is "
-                                                                "put in place of the status line)."}}
+        props = {"question": {"type": "string", "description": "The question put in place of the status line on the "
+                                                                "candidate context."}}
         if bash:
             props["command"] = {"type": "string", "description": "A bash command applied to a copy of the context."}
         else:
@@ -41,8 +41,8 @@ class Fork(Capability):
                                  description="edit_context arguments applied to a copy of the context.")
         return [{"type": "function", "function": {
             "name": "fork",
-            "description": ("Ask your own model once, on a candidate context (the current one changed by command/edit, "
-                            "without changing it). You get the reply and its tool call, which is not carried out."),
+            "description": ("Your own model is called once on a candidate context: the current one changed by command/edit, "
+                            "which is not applied. The result is the reply and its tool call, which is not carried out."),
             "parameters": {"type": "object", "properties": props, "required": ["question"]}}}]
 
     def lines(self) -> list[str]:
@@ -74,7 +74,6 @@ class Fork(Capability):
         return turns, ", ".join(notes)
 
     def call(self, name: str, arguments: dict) -> tuple[str, dict]:
-        from siamlm.capabilities import private_section
         from siamlm.world import chat_messages
         w, a = self.world, self.agent
         st = w._step_state.setdefault(a.k, {}).setdefault("caps", {})
@@ -93,7 +92,7 @@ class Fork(Capability):
             body = a.file.messages(viewer=a.k, labelled=w.labelled, others_as=w.others_as, headers=True, turns=turns)
         else:
             body = chat_messages(turns, w.marks, a.k if w.chat_others == "user" else None)
-        messages = ([{"role": "system", "content": w.system(a) + private_section(a)}] + body
+        messages = ([{"role": "system", "content": w.system(a)}] + body
                     + [{"role": "user", "content": a.budget.readout(size, show_limit=w.capped) + "\n" + question}])
         p = a.pcfg
         replies, usage_total, cost_total = [], {"prompt_tokens": 0, "completion_tokens": 0}, 0.0

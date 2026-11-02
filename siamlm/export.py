@@ -139,12 +139,14 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
                     "result": result, "notices": notices, "error": c.get("error"), "usage": c.get("usage") or {},
                     "cost": c.get("cost"), "finish_reason": c.get("finish_reason"), "sampling_seed": seed,
                     "reward": _reward(item) if item else None, "item_passed": item.get("passed") if item else None})
+    exit_tools = logs.dir / "requests" / f"exit_tools_a{k}.json"   # the set sent with the exit question (else the first)
+    exit_set = json.loads(exit_tools.read_text(encoding="utf-8")) if exit_tools.exists() else first
     for e in logs.exits:                                   # world.exit_question: one more call, text only
         if e["agent"] == k:
             req = logs.dir / "requests" / f"exit_a{k}.json"
             out.append({"round": e["round"], "call_in_step": None, "item": None, "kind": "exit_question",
                         "messages": json.loads(req.read_text(encoding="utf-8")) if req.exists() else None,
-                        "tools": first, "text": e.get("text"), "tool_calls": [], "reasoning": None,
+                        "tools": exit_set, "text": e.get("text"), "tool_calls": [], "reasoning": None,
                         "reply_source": "exit.jsonl", "result": None, "notices": [], "error": e.get("error"),
                         "usage": e.get("usage") or {}, "cost": e.get("cost"), "finish_reason": e.get("finish_reason"),
                         "sampling_seed": (int(logs.doc["seed"]) * 1000003 + k * 7919 + 999983) % (2 ** 31),
