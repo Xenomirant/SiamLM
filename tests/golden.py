@@ -1,7 +1,7 @@
 """Golden requests: scripted worlds over every setup and the main paths (text and cut-off replies, failed and passed
 runs, edits, holds, the work and step limits), recording a hash of every request (messages + tool schemas), the result logs and the final files.
-tests/golden/requests.json was written by the research harness SLM was ported from (before its Task refactor, and
-checked again against it before the port); test_golden checks that SLM sends the very same requests, tool schemas,
+tests/golden/requests.json was written by the research harness SiamLM was ported from (before its Task refactor, and
+checked again against it before the port); test_golden checks that SiamLM sends the very same requests, tool schemas,
 logs and files.
 
     python tests/golden.py --write     # only when a change of the requests is intended
@@ -77,8 +77,8 @@ def chars_only() -> list[str]:
 
 
 def record() -> dict:
-    from slm import run as runner
-    from slm.world import World
+    from siamlm import run as runner
+    from siamlm.world import World
     out = {}
     for name, overrides in CASES.items():
         cfg = runner.compose(COMMON + overrides + chars_only())

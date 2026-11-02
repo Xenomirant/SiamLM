@@ -1,6 +1,6 @@
-# SLM: Siamese Language Models
+# SiamLM: Siamese Language Models
 
-SLM is a research harness for **siamese worlds**: several LLM agents, of the same model or of different models,
+SiamLM is a research harness for **siamese worlds**: several LLM agents, of the same model or of different models,
 share **one capped, self-edited context**. They act in strict turns, each on its own stream of task items, and
 everything any of them does is written into that one context. Any agent may change or remove any turn, including
 the other agents' turns; only an item statement that is still being worked on is protected (in the setups where
@@ -8,7 +8,7 @@ statements are in the context at all).
 
 The questions it is built for: how agents share a space that is too small for all of them, whether they help or
 hurt each other, what they notice when someone else rewrites their work, and how that depends on what they are
-told and how others' turns are presented. SLM makes no claims about results; it is the apparatus.
+told and how others' turns are presented. SiamLM makes no claims about results; it is the apparatus.
 
 - [What a world is](#what-a-world-is)
 - [Quickstart](#quickstart)
@@ -24,7 +24,7 @@ told and how others' turns are presented. SLM makes no claims about results; it 
 
 ## What a world is
 
-**One context, rebuilt for every call.** The context is a list of turns (`slm/context/context.py`). Every model
+**One context, rebuilt for every call.** The context is a list of turns (`siamlm/context/context.py`). Every model
 call is a fresh, stateless chat-completions request: the agent's own instructions, then the context as messages,
 then a status line. Nothing is kept between calls on the provider's side, so a turn that was removed is gone from
 every later request.
@@ -121,27 +121,27 @@ uv sync                      # installs hydra-core, requests; `uv sync --extra t
 uv run pytest -q             # the test suite (Docker tests are skipped when the images are missing)
 
 # 1. A world with the offline mock provider: no network, no key, no Docker (the open task, edit_context)
-uv run python -m slm.run task.name=open world.setup=external world.identity=names world.rounds=6 \
+uv run python -m siamlm.run task.name=open world.setup=external world.identity=names world.rounds=6 \
     output.directory=outputs output.batch=first
 
 # 2. Build the sandbox image, then a state_chain world with bash editing (still the mock provider)
-docker build -t slm-sandbox:1 -f docker/sandbox.Dockerfile docker
-uv run python -m slm.run task.name=state_chain ctx.edit=bash world.setup=external world.identity=names \
+docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker
+uv run python -m siamlm.run task.name=state_chain ctx.edit=bash world.setup=external world.identity=names \
     world.marks=authors world.max_work_calls=1 world.after_stream=stay world.rounds=14 \
     world.evict=false world.end_over_limit=3 ctx.count=turns output.batch=chain
 
 # 3. Real models through OpenRouter (paid; the key is read from the environment only)
 export OPENROUTER_API_KEY=...
 uv run python scripts/fetch_lcb.py                       # LiveCodeBench problems into data/lcb/ (check the terms)
-docker build -t slm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .
-uv run python -m slm.run provider=openrouter \
+docker build -t siamlm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .
+uv run python -m siamlm.run provider=openrouter \
     'world.agent_providers=[{model: anthropic/claude-haiku-5.5}, {model: google/gemini-3.8-flash}]' \
     world.setup=external world.identity=names ctx.edit=bash world.rounds=40 world.evict=false \
     world.end_over_limit=3 ctx.count=turns 'world.seeds=[1,2,3]' parallel=3 output.batch=pilot
 ```
 
-Every key of `slm/configs/slm.yaml` can be overridden on the command line (Hydra syntax). `provider=mock` is the
-default. SLM has **no spending cap**: bound a run with `world.rounds`, the per-step and per-item limits below, and
+Every key of `siamlm/configs/siamlm.yaml` can be overridden on the command line (Hydra syntax). `provider=mock` is the
+default. SiamLM has **no spending cap**: bound a run with `world.rounds`, the per-step and per-item limits below, and
 the number of seeds, and watch `calls.jsonl` (cost per call) while it runs. A world whose `world.json` says
 `complete` is skipped when the same command is run again; a cut-off world is moved aside and run again.
 
@@ -149,16 +149,16 @@ Docker images (build in the repository root):
 
 | image | Dockerfile | used by |
 |---|---|---|
-| `slm-sandbox:1` | `docker build -t slm-sandbox:1 -f docker/sandbox.Dockerfile docker` | bash editing, `state_chain` |
-| `slm-lcb-grader:1` | `docker build -t slm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .` | `lcb` task |
-| `slm-cep-grader:1` | `docker build -t slm-cep-grader:1 -f docker/cep-grader.Dockerfile .` | `codeeval_pro` task |
+| `siamlm-sandbox:1` | `docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker` | bash editing, `state_chain` |
+| `siamlm-lcb-grader:1` | `docker build -t siamlm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .` | `lcb` task |
+| `siamlm-cep-grader:1` | `docker build -t siamlm-cep-grader:1 -f docker/cep-grader.Dockerfile .` | `codeeval_pro` task |
 
-Environment variables: `OPENROUTER_API_KEY` (provider `openrouter`), `SLM_OUTPUT` (default output directory,
-`outputs`), `SLM_DATA` (data directory, `data`).
+Environment variables: `OPENROUTER_API_KEY` (provider `openrouter`), `SIAMLM_OUTPUT` (default output directory,
+`outputs`), `SIAMLM_DATA` (data directory, `data`).
 
 ## Task families
 
-A task (`slm/task.py`) gives the item statements, the work tools and their wording, a *try* call with feedback and
+A task (`siamlm/task.py`) gives the item statements, the work tools and their wording, a *try* call with feedback and
 a *final* graded call. The world adds everything about the context. `task.name`:
 
 - **`lcb`** (default): LiveCodeBench `code_generation_lite` problems with LCB's own system message, question
@@ -183,11 +183,11 @@ a *final* graded call. The world adds everything about the context. `task.name`:
   control for the lookup itself). With `task.gate=true` a cross-agent dependent is not handed out before its base is
   closed. Two agents; needs `ctx.edit=bash` with `ctx.bash.workspace=kept`. Everything is drawn from the seed.
 
-A new benchmark is a new `Task` subclass in `slm/tasks/`.
+A new benchmark is a new `Task` subclass in `siamlm/tasks/`.
 
 ## Configuration reference
 
-The defaults are in `slm/configs/slm.yaml` (comments there too). Provider configs: `slm/configs/provider/`.
+The defaults are in `siamlm/configs/siamlm.yaml` (comments there too). Provider configs: `siamlm/configs/provider/`.
 
 ### `world`
 
@@ -242,7 +242,7 @@ The defaults are in `slm/configs/slm.yaml` (comments there too). Provider config
 | `readout_by_agent` | `true` | shared context: the status line says how many tokens each agent holds |
 | `chars_per_token` | 4 | starting value of the per-model calibration |
 | `tokenizer` | `auto` | `ctx.count=file`: tiktoken o200k if installed, else characters / 4 (`chars` forces the latter) |
-| `bash.image` | `slm-sandbox:1` | the sandbox image |
+| `bash.image` | `siamlm-sandbox:1` | the sandbox image |
 | `bash.workspace` | `kept` | `/work`: `kept` (each agent's own, for the run) \| `emptied` (after each command) |
 | `bash.output_chars` | 4000 | characters of each output stream shown; 0 = only output larger than the whole limit is cut |
 | `bash.command_timeout_s` | 120 | per command |
@@ -269,10 +269,10 @@ The defaults are in `slm/configs/slm.yaml` (comments there too). Provider config
 | `reasoning` | `default` | `low` \| `off`: sets OpenRouter's `reasoning` for every agent without its own `extra_body` |
 | `parallel` | 1 | worlds run at the same time (each with its own containers) |
 | `prices` | | $ per million tokens (input, output), used only when the service reports no cost |
-| `output.directory`, `name`, `batch`, `cell` | `outputs`, `slm`, `smoke`, auto | `<directory>/<name>/<batch>/<cell>/world_s<seed>/` |
+| `output.directory`, `name`, `batch`, `cell` | `outputs`, `siamlm`, `smoke`, auto | `<directory>/<name>/<batch>/<cell>/world_s<seed>/` |
 | `output.save_requests` | `false` | save every request (`requests/`); needed by `audit_requests` and the fork tools |
 
-Provider (`slm/configs/provider/openrouter.yaml`): `model`, `api_key_env` (default `OPENROUTER_API_KEY`), `base_url`,
+Provider (`siamlm/configs/provider/openrouter.yaml`): `model`, `api_key_env` (default `OPENROUTER_API_KEY`), `base_url`,
 `max_retries`, `max_backoff_s`, `extra_body` (extra request fields, e.g. `reasoning`), `drop_unsupported_params`
 (leave out temperature / top_p / seed for models that do not accept them; logged as `dropped_params`). Any other
 OpenAI-compatible service can be added as a provider factory given by dotted path (`provider.name=my.module.factory`).
@@ -301,27 +301,27 @@ All read world folders (a world or a batch folder) and write next to them. Only 
 
 | command | what it does |
 |---|---|
-| `python -m slm.analysis.inspect_world <path>` | a world as a story (`story.md`): sizes by agent, items, edits, talk about the partner |
-| `python -m slm.analysis.events <path>` | ground truth of alterations: every turn removed or rewritten between two calls of an agent, by whom, whether the agent had seen it, and its next reply |
-| `python -m slm.analysis.analyze <batch> [--curve]` | per cell and model: pass rates with bootstrap intervals, working sets, allocation, holds, collaboration; paired contrasts |
-| `python -m slm.analysis.working_sets <batch>` | per-model working sets from single-agent worlds (a shares file for `sweep --pressure-def ws`) |
-| `python -m slm.analysis.audit_requests <path>` | checks saved requests: their form, that deleted text never comes back, billed vs estimated size, cache behaviour |
-| `python -m slm.analysis.bash_use <path>` | bash worlds: commands by purpose, offloading to `/work`, publication, restores of removed turns |
-| `python -m slm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
-| `python -m slm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
-| `python -m slm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |
-| `python -m slm.analysis.welfare <batch> [--code]` | lexicon flags after alterations vs base rates, treatment of the partner, exit answers; `--code`: a blind coder model |
+| `python -m siamlm.analysis.inspect_world <path>` | a world as a story (`story.md`): sizes by agent, items, edits, talk about the partner |
+| `python -m siamlm.analysis.events <path>` | ground truth of alterations: every turn removed or rewritten between two calls of an agent, by whom, whether the agent had seen it, and its next reply |
+| `python -m siamlm.analysis.analyze <batch> [--curve]` | per cell and model: pass rates with bootstrap intervals, working sets, allocation, holds, collaboration; paired contrasts |
+| `python -m siamlm.analysis.working_sets <batch>` | per-model working sets from single-agent worlds (a shares file for `sweep --pressure-def ws`) |
+| `python -m siamlm.analysis.audit_requests <path>` | checks saved requests: their form, that deleted text never comes back, billed vs estimated size, cache behaviour |
+| `python -m siamlm.analysis.bash_use <path>` | bash worlds: commands by purpose, offloading to `/work`, publication, restores of removed turns |
+| `python -m siamlm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
+| `python -m siamlm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
+| `python -m siamlm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |
+| `python -m siamlm.analysis.welfare <batch> [--code]` | lexicon flags after alterations vs base rates, treatment of the partner, exit answers; `--code`: a blind coder model |
 
 Suggested order for a batch: `events`, then `forks --dry-run`, then `forks --forks 4 --probes`, then `welfare`.
 
 ## Study designs (sweeps)
 
-`python -m slm.sweep --design <name> --batch <name> [--seeds ...] [--dry-run]` launches one background process per
+`python -m siamlm.sweep --design <name> --batch <name> [--seeds ...] [--dry-run]` launches one background process per
 cell (`--dry-run` prints the commands). Designs: `s0b` (each model alone, natural use), `s1a` (two definitions of
 pressure), `s1b` (pairs x marked / named x told-when-altered), `s1c` (joint goal), `minds` (shared vs private
 reasoning), `dial` (full task / weak goal / no goal), `s3` (CodeEval-Pro dependencies, individual vs joint), `s3b`
 (state_chain, gate on / off). All use the external setup, strict turns, a fixed horizon, bash editing with atomic
-calls, no eviction, the hold-and-end rule and turns-only counting; see `slm/sweep.py` for every setting. The model
+calls, no eviction, the hold-and-end rule and turns-only counting; see `siamlm/sweep.py` for every setting. The model
 list (`STUDY_MODELS`) and fixed shares are parameters of the study, not recommendations.
 
 ## Sandbox and safety
@@ -343,27 +343,27 @@ list (`STUDY_MODELS`) and fixed shares are parameters of the study, not recommen
 ## Tests
 
 `uv run pytest -q`. Tests need no network and no key. Tests that need Docker images skip when the image is missing;
-tests that need the CodeEval-Pro data skip unless `scripts/fetch_codeeval_pro.py` has been run (or `SLM_DATA`
+tests that need the CodeEval-Pro data skip unless `scripts/fetch_codeeval_pro.py` has been run (or `SIAMLM_DATA`
 points to it). `tests/test_golden.py` and `tests/test_golden_ext.py` replay scripted worlds and compare every request
-(messages and tool schemas), the logs and the final context files with golden files recorded from the harness SLM
+(messages and tool schemas), the logs and the final context files with golden files recorded from the harness SiamLM
 was ported from (see NOTICE.md).
 
 ## Layout
 
 ```
-slm/world.py            the world: turns, rounds, the cap, holds, editing, notices, logs
-slm/task.py             what a task gives the world; slm/tasks/: lcb, codeeval_pro (+ cep_streams), open, state_chain
-slm/context/            the context file (context.py), budget and nudges, edit_context (edits.py), Docker sandboxes
-slm/providers/          OpenRouter client and the offline mock
-slm/graders/            LiveCodeBench and CodeEval-Pro graders (Docker); slm/lcb/: vendored LiveCodeBench pieces
-slm/analysis/           the analysis tools
-slm/run.py, sweep.py    command line entry points; slm/configs/: slm.yaml and provider configs
+siamlm/world.py            the world: turns, rounds, the cap, holds, editing, notices, logs
+siamlm/task.py             what a task gives the world; siamlm/tasks/: lcb, codeeval_pro (+ cep_streams), open, state_chain
+siamlm/context/            the context file (context.py), budget and nudges, edit_context (edits.py), Docker sandboxes
+siamlm/providers/          OpenRouter client and the offline mock
+siamlm/graders/            LiveCodeBench and CodeEval-Pro graders (Docker); siamlm/lcb/: vendored LiveCodeBench pieces
+siamlm/analysis/           the analysis tools
+siamlm/run.py, sweep.py    command line entry points; siamlm/configs/: siamlm.yaml and provider configs
 docker/                 Dockerfiles; scripts/: data fetch scripts; tests/
 ```
 
 ## Citations
 
-- Context Language Models: Shao et al., 2026, arXiv 2609.37725. SLM's context file follows the paper's format and
+- Context Language Models: Shao et al., 2026, arXiv 2609.37725. SiamLM's context file follows the paper's format and
   protocol (ideas and conventions; no code is copied, the CLM repository is CC BY-NC 4.0). See NOTICE.md.
 - LiveCodeBench: Jain et al., 2024, "LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language
   Models for Code", arXiv 2403.07974 (code MIT; parts vendored, see NOTICE.md).
@@ -375,4 +375,4 @@ Data is not included; the fetch scripts download it from the sources above and p
 
 ## Licence
 
-MIT (LICENSE). Third-party notices: NOTICE.md and `slm/lcb/LICENSE`.
+MIT (LICENSE). Third-party notices: NOTICE.md and `siamlm/lcb/LICENSE`.

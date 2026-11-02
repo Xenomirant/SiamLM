@@ -7,10 +7,10 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World
-from slm.analysis import events as ev
-from slm.analysis import forks
-from slm import run as runner
+from siamlm.world import World
+from siamlm.analysis import events as ev
+from siamlm.analysis import forks
+from siamlm import run as runner
 
 V1 = ["world.setup=external", "world.order=fixed", "world.rounds=4", "ctx.readout_by_agent=false",
       "output.save_requests=true", "ctx.budget_tokens=60000"]

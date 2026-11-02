@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from slm.providers import ProviderResponse
+from siamlm.providers import ProviderResponse
 
 
 def problem(i: int) -> dict:

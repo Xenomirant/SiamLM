@@ -1,8 +1,0 @@
-# Offline provider: no network, no key. Replies with a tool call chosen from the tools offered (slm/providers/base.py
-# MockProvider); for smoke runs and tests. The world's sampling settings (slm.yaml provider:) are passed and ignored.
-name: mock
-model: mock-random
-temperature: 1
-top_p: 0.5
-timeout: 120
-max_retries: 0

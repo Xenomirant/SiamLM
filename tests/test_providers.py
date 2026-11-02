@@ -3,10 +3,10 @@ behaviour without a key or with a refused request (no network: requests.post is 
 import pytest
 from omegaconf import OmegaConf
 
-from slm.providers import MockProvider, OpenAICompatibleProvider, make_provider
-from slm.world import bash_tool, edit_tool
-from slm.tasks.lcb import TOOLS
-from slm.tasks.state_chain import SUBMIT
+from siamlm.providers import MockProvider, OpenAICompatibleProvider, make_provider
+from siamlm.world import bash_tool, edit_tool
+from siamlm.tasks.lcb import TOOLS
+from siamlm.tasks.state_chain import SUBMIT
 
 
 def test_mock_calls_only_offered_tools_with_their_required_arguments():
@@ -27,9 +27,9 @@ def test_mock_calls_only_offered_tools_with_their_required_arguments():
 
 def test_make_provider_names_and_dotted_paths():
     assert isinstance(make_provider(OmegaConf.create({"name": "mock", "model": "m"})), MockProvider)
-    p = make_provider(OmegaConf.create({"name": "openrouter", "model": "a/b", "api_key_env": "SLM_TEST_NO_KEY"}))
+    p = make_provider(OmegaConf.create({"name": "openrouter", "model": "a/b", "api_key_env": "SIAMLM_TEST_NO_KEY"}))
     assert isinstance(p, OpenAICompatibleProvider) and p.base_url == "https://openrouter.ai/api/v1"
-    dotted = make_provider(OmegaConf.create({"name": "slm.providers.base.MockProvider", "model": "m"}))
+    dotted = make_provider(OmegaConf.create({"name": "siamlm.providers.base.MockProvider", "model": "m"}))
     assert isinstance(dotted, MockProvider)
     with pytest.raises(ValueError):
         make_provider(OmegaConf.create({"name": "nonesuch", "model": "m"}))
@@ -37,9 +37,9 @@ def test_make_provider_names_and_dotted_paths():
 
 def test_missing_key_is_an_error_without_any_request(monkeypatch):
     import requests
-    monkeypatch.delenv("SLM_TEST_NO_KEY", raising=False)
+    monkeypatch.delenv("SIAMLM_TEST_NO_KEY", raising=False)
     monkeypatch.setattr(requests, "post", lambda *a, **k: pytest.fail("no request may be sent"))
-    p = OpenAICompatibleProvider("openrouter", "a/b", "http://x", "SLM_TEST_NO_KEY")
+    p = OpenAICompatibleProvider("openrouter", "a/b", "http://x", "SIAMLM_TEST_NO_KEY")
     r = p.chat([{"role": "user", "content": "q"}], seed=1, temperature=0.2, top_p=0.95)
     assert r.error_kind == "missing_key" and r.text is None
 
@@ -50,8 +50,8 @@ def test_context_limit_is_not_retried(monkeypatch):
     class Resp:
         status_code, text, headers = 400, "This model's maximum context length is 8192 tokens", {}
     sent = []
-    monkeypatch.setenv("SLM_TEST_KEY", "k")
+    monkeypatch.setenv("SIAMLM_TEST_KEY", "k")
     monkeypatch.setattr(requests, "post", lambda *a, **k: sent.append(k["json"]) or Resp())
-    p = OpenAICompatibleProvider("other", "a/b", "http://x", "SLM_TEST_KEY", max_retries=3, drop_unsupported_params=False)
+    p = OpenAICompatibleProvider("other", "a/b", "http://x", "SIAMLM_TEST_KEY", max_retries=3, drop_unsupported_params=False)
     r = p.chat([{"role": "user", "content": "q"}], seed=1, temperature=0.2, top_p=0.95, tools=[SUBMIT])
     assert r.error_kind == "context_limit" and len(sent) == 1 and sent[0]["tools"] == [SUBMIT]

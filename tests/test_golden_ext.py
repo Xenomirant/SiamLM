@@ -1,4 +1,4 @@
-"""SLM sends the requests the original harness sent, for every feature added after the first golden file
+"""SiamLM sends the requests the original harness sent, for every feature added after the first golden file
 (tests/golden/extended.json, recorded from the original code with the same scripts; see golden_ext.py)."""
 import json
 
@@ -8,7 +8,7 @@ from golden_ext import CASES, DOCKER_KINDS, FIXTURE, docker_ok, slm_record
 
 
 def image():
-    from slm import run as runner
+    from siamlm import run as runner
     return str(runner.compose().ctx.bash.image)
 
 

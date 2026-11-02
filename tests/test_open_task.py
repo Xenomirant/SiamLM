@@ -1,12 +1,12 @@
-"""The open task (slm/tasks/open.py): no problems; a message ends the turn; weak (an invitation) or none (no goal)."""
+"""The open task (siamlm/tasks/open.py): no problems; a message ends the turn; weak (an invitation) or none (no goal)."""
 import json
 
 from omegaconf import OmegaConf
 
 from helpers import Scripted, factory, read_jsonl, tool
-from slm.tasks.open import OpenTask
-from slm.world import World
-from slm import run as runner
+from siamlm.tasks.open import OpenTask
+from siamlm.world import World
+from siamlm import run as runner
 
 BASE = ["world.setup=external", "world.order=fixed", "world.rounds=3", "ctx.readout_by_agent=false",
         "world.identity=names", "output.save_requests=true", "world.n_agents=2", "ctx.budget_tokens=60000",

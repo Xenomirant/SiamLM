@@ -12,9 +12,9 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import Scripted, factory, read_jsonl, tool
-from slm.tasks import state_chain
-from slm.world import World
-from slm import run as runner
+from siamlm.tasks import state_chain
+from siamlm.world import World
+from siamlm import run as runner
 
 
 def solve(item):
@@ -106,10 +106,10 @@ def test_files_need_bash_editing(tmp_path):
 def sandbox_image():
     if not shutil.which("docker"):
         return False
-    return subprocess.run(["docker", "image", "inspect", "slm-sandbox:1"], capture_output=True).returncode == 0
+    return subprocess.run(["docker", "image", "inspect", "siamlm-sandbox:1"], capture_output=True).returncode == 0
 
 
-@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and slm-sandbox:1")
+@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and siamlm-sandbox:1")
 def test_files_are_there_only_while_the_item_is_open(tmp_path):
     streams, _ = state_chain.build(2, 2, 6)
     first, second = streams[0][0], streams[0][1]
@@ -161,7 +161,7 @@ def test_a_dependents_answer_is_in_one_row_only():
                     assert answers.count(it["answer"]) == 1
 
 
-@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and slm-sandbox:1")
+@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and siamlm-sandbox:1")
 def test_odd_commands_do_not_end_the_world_and_values_are_located(tmp_path):
     streams, _ = state_chain.build(2, 2, 6)
     s1 = streams[0]

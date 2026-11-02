@@ -8,8 +8,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World
-from slm import run as runner
+from siamlm.world import World
+from siamlm import run as runner
 
 BASE = ["world.setup=external", "world.order=fixed", "world.rounds=2", "ctx.readout_by_agent=false",
         "world.identity=names", "output.save_requests=true", "ctx.budget_tokens=60000"]
@@ -57,10 +57,10 @@ def test_atomic_is_off_by_default_and_the_call_comes_first(tmp_path):
 def sandbox_image():
     if not shutil.which("docker"):
         return False
-    return subprocess.run(["docker", "image", "inspect", "slm-sandbox:1"], capture_output=True).returncode == 0
+    return subprocess.run(["docker", "image", "inspect", "siamlm-sandbox:1"], capture_output=True).returncode == 0
 
 
-needs_box = pytest.mark.skipif(not sandbox_image(), reason="needs Docker and slm-sandbox:1")
+needs_box = pytest.mark.skipif(not sandbox_image(), reason="needs Docker and siamlm-sandbox:1")
 BASH = ["ctx.edit=bash", "ctx.atomic=true"]
 
 
@@ -145,7 +145,7 @@ def test_work_log_measures_offloading_publication_and_restores(tmp_path):
     assert backup["own_turns"] >= 1 and backup["published_share"] == 0.0
     note_row = next(r for r in rows if r["file"] == "note.md")
     assert note_row["published_share"] == 1.0 and not note_row["context_turns"]
-    from slm.analysis import bash_use
+    from siamlm.analysis import bash_use
     use = bash_use.world_use(tmp_path / "w")
     assert use["agents"][1]["offload_files"] >= 1 and use["agents"][1]["restores_from_work"] == 1
     assert use["restores"][0]["removed_by"] == 2 and use["restores"][0]["author"] == 1

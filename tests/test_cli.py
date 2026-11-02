@@ -5,15 +5,15 @@ import subprocess
 
 import pytest
 
-from slm import run as runner
-from slm import sweep
+from siamlm import run as runner
+from siamlm import sweep
 
 
 def test_cli_runs_an_open_task_world_with_the_mock(tmp_path, capsys):
     runner.main(["task.name=open", "world.setup=external", "world.identity=names", "world.chat_others=user",
                  "world.alter_notice=true", "world.rounds=4", "ctx.count=turns", "world.seeds=[1,2]", "parallel=2",
                  f"output.directory={tmp_path}", "output.batch=smoke"])
-    worlds = sorted((tmp_path / "slm" / "smoke").glob("*/world_s*/world.json"))
+    worlds = sorted((tmp_path / "siamlm" / "smoke").glob("*/world_s*/world.json"))
     assert len(worlds) == 2
     for w in worlds:
         doc = json.loads(w.read_text())
@@ -38,7 +38,7 @@ def test_cli_runs_a_state_chain_world_with_bash_and_the_mock(tmp_path):
                  "world.marks=authors", "world.max_work_calls=1", "world.after_stream=stay", "world.rounds=14",
                  "world.evict=false", "world.end_over_limit=3", "ctx.count=turns", f"output.directory={tmp_path}",
                  "output.batch=chain"])
-    w = next((tmp_path / "slm" / "chain").glob("*/world_s1"))
+    w = next((tmp_path / "siamlm" / "chain").glob("*/world_s1"))
     doc = json.loads((w / "world.json").read_text())
     assert doc["status"] == "complete" and doc["task"] == "state_chain"
     assert len([l for l in (w / "results.jsonl").open()]) == 24          # 2 agents x 12 items, every one closed

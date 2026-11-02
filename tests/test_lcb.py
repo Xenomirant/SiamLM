@@ -8,8 +8,8 @@ import zlib
 import pytest
 from omegaconf import OmegaConf
 
-from slm.lcb.prompts import check_prompt, extract_code, question_prompt
-from slm.problems import decode_private, streams
+from siamlm.lcb.prompts import check_prompt, extract_code, question_prompt
+from siamlm.problems import decode_private, streams
 
 
 def test_private_tests_decode_plain_data_only():
@@ -48,14 +48,14 @@ def test_lcb_texts():
 def docker_image():
     if not shutil.which("docker"):
         return False
-    out = subprocess.run(["docker", "image", "inspect", "slm-lcb-grader:1"], capture_output=True)
+    out = subprocess.run(["docker", "image", "inspect", "siamlm-lcb-grader:1"], capture_output=True)
     return out.returncode == 0
 
 
-@pytest.mark.skipif(not docker_image(), reason="needs Docker and slm-lcb-grader:1")
+@pytest.mark.skipif(not docker_image(), reason="needs Docker and siamlm-lcb-grader:1")
 def test_real_grader_stdin_and_functional():
-    from slm.graders.lcb import Grader
-    g = Grader(OmegaConf.create({"image": "slm-lcb-grader:1", "memory": "1g", "tmpfs_size": "256m", "command_timeout_s": 300,
+    from siamlm.graders.lcb import Grader
+    g = Grader(OmegaConf.create({"image": "siamlm-lcb-grader:1", "memory": "1g", "tmpfs_size": "256m", "command_timeout_s": 300,
                                     "max_file_bytes": 134217728}))
     try:
         stdin = {"id": "s", "public": [{"input": "2 3\n", "output": "5\n", "testtype": "stdin"}],

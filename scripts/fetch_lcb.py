@@ -2,12 +2,12 @@
 
     python scripts/fetch_lcb.py [--files test6.jsonl] [--out data/lcb]
 
-Nothing of this data is shipped with SLM. CHECK THE TERMS BEFORE USE: LiveCodeBench's code is MIT, but the licence
+Nothing of this data is shipped with SiamLM. CHECK THE TERMS BEFORE USE: LiveCodeBench's code is MIT, but the licence
 on the dataset card of livecodebench/code_generation_lite is given only as "cc" (which Creative Commons licence is not
 stated). You are responsible for whether your use is permitted.
 
 The default is test6.jsonl (the problems added in release_v6, 175 problems, ~134 MB) at a pinned revision, checked by
-sha256; SLM's default config reads <data.dir>/lcb/test6.jsonl (problems.file). Other release files (test.jsonl ...
+sha256; SiamLM's default config reads <data.dir>/lcb/test6.jsonl (problems.file). Other release files (test.jsonl ...
 test5.jsonl, up to 1.25 GB each) can be fetched with --files; they are checked only against the size Hugging Face
 reports.
 """
@@ -32,7 +32,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--files", nargs="+", default=["test6.jsonl"])
     ap.add_argument("--revision", default=REVISION)
-    ap.add_argument("--out", default=str(Path(os.environ.get("SLM_DATA", "data")) / "lcb"))
+    ap.add_argument("--out", default=str(Path(os.environ.get("SIAMLM_DATA", "data")) / "lcb"))
     a = ap.parse_args(argv)
     print(NOTICE, file=sys.stderr)
     out = Path(a.out)

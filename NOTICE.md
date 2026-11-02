@@ -1,10 +1,10 @@
 # Notices
 
-SLM is licensed under the MIT License (LICENSE). This file lists where it comes from and what it owes to others.
+SiamLM is licensed under the MIT License (LICENSE). This file lists where it comes from and what it owes to others.
 
 ## Derivation
 
-SLM is derived from an MIT-licensed research harness (Copyright (c) 2026 JB): its multi-agent "siamese" worlds and
+SiamLM is derived from an MIT-licensed research harness (Copyright (c) 2026 JB): its multi-agent "siamese" worlds and
 its context-file module were ported into this package. The port keeps every text the models are sent byte for byte:
 `tests/test_golden.py` and `tests/test_golden_ext.py` replay scripted worlds and compare every request (messages and
 tool schemas), the logs and the final context files with golden files recorded from the original code.
@@ -12,7 +12,7 @@ tool schemas), the logs and the final context files with golden files recorded f
 ## Context Language Models (ideas and conventions only)
 
 **Context Language Models** (Shao et al., 2026, arXiv 2609.37725; code: `facebookresearch/context-language-models`,
-licensed CC BY-NC 4.0). SLM's context-file mechanism is our own reimplementation; **no code is copied from the CLM
+licensed CC BY-NC 4.0). SiamLM's context-file mechanism is our own reimplementation; **no code is copied from the CLM
 repository**. Taken from the paper and repository as ideas and conventions:
 
 - the file format: one block per turn, opened by a header line (CLM: `[[CTX_TURN i role=…]]`; ours:
@@ -21,7 +21,7 @@ repository**. Taken from the paper and repository as ideas and conventions:
 - a token budget with a reserve, showing the model the enforced limit (budget − reserve), nudges at 25 / 50 / 75 %,
   and the edit gate (an edit may not grow the context past the limit);
 - the size readout in the context (`[context: ~N/limit tokens]`) and the gist of the nudge texts, in our own words;
-- not carrying out a move while the context is over the limit (CLM rolls back and retries; SLM holds the call), and
+- not carrying out a move while the context is over the limit (CLM rolls back and retries; SiamLM holds the call), and
   ending a session that stays over the limit;
 - editing the context file with bash in a container, with a time limit per command;
 - echoing every editing call and its result into the context.
@@ -31,17 +31,17 @@ If you find wording that still follows CLM closely, credit it here as "adapted f
 ## LiveCodeBench (code, MIT)
 
 **LiveCodeBench** (Jain et al., 2024; github.com/LiveCodeBench/LiveCodeBench, MIT, commit 28fef95; its licence is
-in `slm/lcb/LICENSE`).
-- `slm/lcb/testing_util.py` is copied unchanged.
-- `slm/lcb/driver.py` follows `compute_code_generation_metrics.check_correctness`.
-- `slm/lcb/prompts.py` copies the generic system message, the question template, the self-repair feedback text and
+in `siamlm/lcb/LICENSE`).
+- `siamlm/lcb/testing_util.py` is copied unchanged.
+- `siamlm/lcb/driver.py` follows `compute_code_generation_metrics.check_correctness`.
+- `siamlm/lcb/prompts.py` copies the generic system message, the question template, the self-repair feedback text and
   the code extraction rule. The function signatures are adapted, and there is one documented change for programs
   that do not compile.
 
 ## Third-party data (not included)
 
 No benchmark data is shipped. The fetch scripts download it from the upstream sources into a local folder
-(`data/` by default, `SLM_DATA` to change it). **Check the terms before you use or share the data.**
+(`data/` by default, `SIAMLM_DATA` to change it). **Check the terms before you use or share the data.**
 
 - **LiveCodeBench problems** (`scripts/fetch_lcb.py`): huggingface.co/datasets/livecodebench/code_generation_lite,
   pinned revision. The dataset card gives the licence only as "cc"; which licence applies is not stated.
@@ -55,9 +55,9 @@ No benchmark data is shipped. The fetch scripts download it from the upstream so
   the same fetch script. `docker/cep-grader.Dockerfile` pins library versions from BigCodeBench's
   `Requirements/requirements-eval.txt` (github.com/bigcode-project/bigcodebench, commit 09dd993).
 
-What is ours (MIT, like the rest): the CodeEval-Pro grader and its driver (`slm/graders/`), the task and stream
-builders (`slm/tasks/codeeval_pro.py`, `slm/tasks/cep_streams.py`), and the procedurally generated `state_chain`
-task (`slm/tasks/state_chain.py`), which uses no data set.
+What is ours (MIT, like the rest): the CodeEval-Pro grader and its driver (`siamlm/graders/`), the task and stream
+builders (`siamlm/tasks/codeeval_pro.py`, `siamlm/tasks/cep_streams.py`), and the procedurally generated `state_chain`
+task (`siamlm/tasks/state_chain.py`), which uses no data set.
 
 ## Other
 

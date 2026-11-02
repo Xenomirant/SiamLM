@@ -3,8 +3,8 @@ world.alter_notice (the next status says what other agents did to one's turns)."
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World
-from slm import run as runner
+from siamlm.world import World
+from siamlm import run as runner
 
 BASE = ["world.setup=external", "world.order=fixed", "world.rounds=3", "ctx.readout_by_agent=false",
         "world.identity=names", "output.save_requests=true", "world.n_agents=2", "ctx.budget_tokens=60000"]
@@ -83,7 +83,7 @@ def test_the_exit_call_does_not_take_a_pending_alter_notice(tmp_path):
 
 
 def test_restatus_keeps_the_fill_note_at_the_new_size():
-    from slm.analysis import forks
+    from siamlm.analysis import forks
     status = "[context: ~16325/28672 tokens]\nYour context is about half full (~16325/28672 tokens).\nYour current problem is in your instructions (problem 2 of 40). run_tests/submit left for it: 7."
     new, over = forks.restatus(status, 16325, 9000, 28672, "run_tests and submit")
     assert "Your context is about a quarter full (~9000/28672 tokens)." in new.split("\n")[1] and not over

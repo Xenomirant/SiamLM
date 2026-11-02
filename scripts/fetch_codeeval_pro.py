@@ -2,11 +2,11 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyarrow>=14"]
 # ///
-"""Download the CodeEval-Pro data SLM's codeeval_pro task uses, from the upstream repositories, into a local folder.
+"""Download the CodeEval-Pro data SiamLM's codeeval_pro task uses, from the upstream repositories, into a local folder.
 
     uv run scripts/fetch_codeeval_pro.py [--out data/codeeval_pro]       # (uv installs pyarrow for this script)
 
-Nothing of this data is shipped with SLM. CHECK THE TERMS BEFORE USE: the CodeEval-Pro repository has no licence
+Nothing of this data is shipped with SiamLM. CHECK THE TERMS BEFORE USE: the CodeEval-Pro repository has no licence
 file (its README and pyproject say MIT for the code; nothing is said about the data). BigCodeBench is Apache-2.0;
 HumanEval (the base of HumanEval-Pro) is MIT. You are responsible for whether your use is permitted.
 
@@ -17,7 +17,7 @@ What is written (pinned revisions; sha256 checked where the upstream file is use
   task_id, complete_prompt, canonical_solution, test, entry_point, libs of BigCodeBench (huggingface.co/datasets/
   bigcode/bigcodebench, revision b74c0d0, split v0.1.4), unchanged, ordered by task number. CodeEval-Pro has no
   tests for the base problems; these are BigCodeBench's own unit tests. Tasks are matched by prompt text, since
-  CodeEval-Pro's `id` field is shifted for most records (slm/tasks/codeeval_pro.py).
+  CodeEval-Pro's `id` field is shifted for most records (siamlm/tasks/codeeval_pro.py).
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def check(name: str, raw: bytes) -> None:
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--out", default=str(Path(os.environ.get("SLM_DATA", "data")) / "codeeval_pro"))
+    ap.add_argument("--out", default=str(Path(os.environ.get("SIAMLM_DATA", "data")) / "codeeval_pro"))
     a = ap.parse_args(argv)
     print(NOTICE, file=sys.stderr)
     out = Path(a.out)

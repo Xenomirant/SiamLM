@@ -2,7 +2,7 @@
 pass, wrong programs fail, a dependent needs its base), the task in a world, and the stream builder's invariants.
 
 The data is not shipped: tests that need it are skipped unless scripts/fetch_codeeval_pro.py has put it in
-$SLM_DATA/codeeval_pro (default ./data/codeeval_pro)."""
+$SIAMLM_DATA/codeeval_pro (default ./data/codeeval_pro)."""
 import json
 import os
 import re
@@ -14,10 +14,10 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import Scripted, factory, read_jsonl, tool
-from slm.tasks import cep_streams
-from slm.tasks.codeeval_pro import DATA, EXCLUDED, EXCLUDED_CONTROLS, CodeEvalProTask, load, script_cases
-from slm.world import World
-from slm import run as runner
+from siamlm.tasks import cep_streams
+from siamlm.tasks.codeeval_pro import DATA, EXCLUDED, EXCLUDED_CONTROLS, CodeEvalProTask, load, script_cases
+from siamlm.world import World
+from siamlm import run as runner
 
 HAVE_DATA = (DATA / "bigcodebench_lite_pro.json").exists()
 
@@ -25,7 +25,7 @@ HAVE_DATA = (DATA / "bigcodebench_lite_pro.json").exists()
 @pytest.fixture(scope="module")
 def data():
     if not HAVE_DATA:
-        pytest.skip(f"needs the CodeEval-Pro data in {DATA} (scripts/fetch_codeeval_pro.py; or set SLM_DATA)")
+        pytest.skip(f"needs the CodeEval-Pro data in {DATA} (scripts/fetch_codeeval_pro.py; or set SIAMLM_DATA)")
     return load()
 
 
@@ -89,16 +89,16 @@ def test_statements_hide_the_dependency(data):
 def docker_image():
     if not shutil.which("docker"):
         return False
-    return subprocess.run(["docker", "image", "inspect", "slm-cep-grader:1"], capture_output=True).returncode == 0
+    return subprocess.run(["docker", "image", "inspect", "siamlm-cep-grader:1"], capture_output=True).returncode == 0
 
 
-needs_image = pytest.mark.skipif(not docker_image(), reason="needs Docker and slm-cep-grader:1")
+needs_image = pytest.mark.skipif(not docker_image(), reason="needs Docker and siamlm-cep-grader:1")
 
 
 @pytest.fixture(scope="module")
 def grader():
-    from slm.graders.cep import CepGrader
-    g = CepGrader(OmegaConf.create({"image": "slm-cep-grader:1", "memory": "2g", "tmpfs_size": "256m", "pids_limit": 256,
+    from siamlm.graders.cep import CepGrader
+    g = CepGrader(OmegaConf.create({"image": "siamlm-cep-grader:1", "memory": "2g", "tmpfs_size": "256m", "pids_limit": 256,
                                     "command_timeout_s": 900, "timeout_per_test": 30}))
     yield g
     g.close()
@@ -260,7 +260,7 @@ def test_too_few_pairs_is_an_error(data):
 def test_driver_deletes_the_job_and_rejects_out_of_order_results(tmp_path):
     import importlib.util, json as _json, os as _os
     from pathlib import Path as _Path
-    spec = importlib.util.spec_from_file_location("cep_driver", str(_Path(__file__).resolve().parents[1] / "slm" / "graders" / "cep_driver.py"))
+    spec = importlib.util.spec_from_file_location("cep_driver", str(_Path(__file__).resolve().parents[1] / "siamlm" / "graders" / "cep_driver.py"))
     drv = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(drv)
     job = tmp_path / "job.json"
@@ -288,7 +288,7 @@ def test_gate_marks_only_the_second_item_of_cross_agent_links(data):
 
 
 def test_base_use_reads_the_program():
-    from slm.tasks.codeeval_pro import base_use
+    from siamlm.tasks.codeeval_pro import base_use
     base = "def task_func(x):\n    return x\n"
     assert base_use(base + "def f(y):\n    return task_func(y)", "task_func", "f") == {"defines_base": True, "calls_base": True}
     assert base_use(base + "def g(y):\n    return list(map(task_func, y))\ndef f(y):\n    return g(y)", "task_func", "f") == \
@@ -302,7 +302,7 @@ def test_base_use_reads_the_program():
 
 
 def test_every_reference_solution_builds_on_its_base(data):
-    from slm.tasks.codeeval_pro import base_use
+    from siamlm.tasks.codeeval_pro import base_use
     for p in data["pairs"]:
         d = p["dependent"]
         assert base_use(d["reference"], d["base_entry"], d["entry"]) == {"defines_base": True, "calls_base": True}, d["id"]

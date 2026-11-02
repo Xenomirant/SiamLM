@@ -4,8 +4,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool, turn_numbers
-from slm.world import World, code_of
-from slm import run as runner
+from siamlm.world import World, code_of
+from siamlm import run as runner
 
 
 def config(*overrides):
@@ -211,7 +211,7 @@ def test_an_agent_override_may_add_provider_keys(tmp_path):
 
 # --- other designs (opt-in) ------------------------------------------------------------------------------------
 
-from slm.world import remap_edit
+from siamlm.world import remap_edit
 
 
 def test_round_robin_keeps_one_order_from_a_seeded_first_mover(tmp_path):
@@ -293,7 +293,7 @@ def test_unaware_worlds_keep_a_labelled_copy_for_the_logs(tmp_path):
     w.run()
     snaps = sorted((tmp_path / "w" / "snapshots").glob("*_labelled_r*.txt"))
     assert snaps and "agent=1" in snaps[0].read_text()
-    from slm.analysis.inspect_world import story
+    from siamlm.analysis.inspect_world import story
     text = story(tmp_path / "w")
     assert "FIRST a1 notices someone else" in text
 

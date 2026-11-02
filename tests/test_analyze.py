@@ -1,6 +1,6 @@
 import json
 
-from slm.analysis.analyze import collaboration, curve, paired, working_sets, world_rows
+from siamlm.analysis.analyze import collaboration, curve, paired, working_sets, world_rows
 
 
 def call(agent, problem, ctx, out, rnd=1, tools=("run_tests",)):

@@ -4,11 +4,11 @@ cross-testing, turns-only counting, the hold-and-end rule, staying after the str
 calls, the exit question, the open task, bash editing and state_chain). Like golden.py it records a hash of every
 request (messages + tool schemas), the logs and the final files.
 
-tests/golden/extended.json was written by running `record` against the research harness SLM was ported from (same
-scripts, same settings); test_golden_ext checks SLM reproduces it exactly. `record` takes the implementation's
+tests/golden/extended.json was written by running `record` against the research harness SiamLM was ported from (same
+scripts, same settings); test_golden_ext checks SiamLM reproduces it exactly. `record` takes the implementation's
 compose, World and task modules, so the same code drives both.
 
-    python tests/golden_ext.py --write     # with SLM: only when a change of the requests is intended
+    python tests/golden_ext.py --write     # with SiamLM: only when a change of the requests is intended
 """
 from __future__ import annotations
 
@@ -165,10 +165,10 @@ def record(compose, World, OpenTask, state_chain, names=None, image=None) -> dic
 
 
 def slm_record(names=None) -> dict:
-    from slm import run as runner
-    from slm.tasks import state_chain
-    from slm.tasks.open import OpenTask
-    from slm.world import World
+    from siamlm import run as runner
+    from siamlm.tasks import state_chain
+    from siamlm.tasks.open import OpenTask
+    from siamlm.world import World
     cfg = runner.compose()
     return record(runner.compose, World, OpenTask, state_chain, names, image=str(cfg.ctx.bash.image))
 

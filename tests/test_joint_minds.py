@@ -6,8 +6,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World
-from slm import run as runner
+from siamlm.world import World
+from siamlm import run as runner
 
 BASE = ["world.setup=external", "world.order=fixed", "world.rounds=2", "ctx.readout_by_agent=false",
         "world.identity=names", "output.save_requests=true", "world.n_agents=2", "ctx.budget_tokens=60000"]

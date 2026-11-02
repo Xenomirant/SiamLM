@@ -8,8 +8,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World
-from slm import run as runner
+from siamlm.world import World
+from siamlm import run as runner
 
 
 def config(*overrides):

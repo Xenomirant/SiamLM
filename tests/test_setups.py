@@ -8,8 +8,8 @@ import pytest
 from omegaconf import OmegaConf
 
 from helpers import FakeGrader, Scripted, factory, problem, read_jsonl, tool
-from slm.world import World, chat_messages
-from slm import run as runner
+from siamlm.world import World, chat_messages
+from siamlm import run as runner
 
 
 def config(*overrides):
@@ -50,7 +50,7 @@ def test_a_deleted_turn_never_reaches_the_model_again(tmp_path, setup):
 @pytest.mark.parametrize("setup", ["assigned", "pool", "external"])
 def test_each_request_is_exactly_system_plus_file_plus_status(tmp_path, setup):
     """At every call, the messages sent equal the instructions + the stored file rendered at that moment + status."""
-    from slm.world import chat_messages
+    from siamlm.world import chat_messages
     holder, checked = {}, []
 
     def check(messages):
@@ -75,7 +75,7 @@ def test_each_request_is_exactly_system_plus_file_plus_status(tmp_path, setup):
 
 def test_the_provider_sends_only_the_given_messages(monkeypatch):
     """OpenAICompatibleProvider: two calls, two independent payloads; nothing carried over between them."""
-    from slm.providers.base import OpenAICompatibleProvider
+    from siamlm.providers.base import OpenAICompatibleProvider
     sent = []
 
     class Resp:
@@ -175,7 +175,7 @@ def test_pool_attempts_are_capped_per_agent(tmp_path):
 # --- token count, names ------------------------------------------------------------------------------------------
 
 def test_whole_count_includes_tools_and_calibrates_per_model(tmp_path):
-    from slm.providers import ProviderResponse
+    from siamlm.providers import ProviderResponse
 
     class Billed(Scripted):
         def chat(self, messages, **kw):
@@ -203,14 +203,14 @@ def test_old_design_names_still_work(tmp_path):
 def sandbox_image():
     if not shutil.which("docker"):
         return False
-    return subprocess.run(["docker", "image", "inspect", "slm-sandbox:1"], capture_output=True).returncode == 0
+    return subprocess.run(["docker", "image", "inspect", "siamlm-sandbox:1"], capture_output=True).returncode == 0
 
 
 DELETE_TURN = ("python3 -c \"import re;p='/ctx/context.txt';t=open(p).read();b=re.split(r'(?=\\[\\[TURN )',t);"
                "open(p,'w').write(''.join(x for x in b if not x.startswith('[[TURN {n} ')))\"")
 
 
-@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and slm-sandbox:1")
+@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and siamlm-sandbox:1")
 def test_bash_edits_the_shared_file_under_the_same_rules(tmp_path):
     a1 = Scripted([tool("run_tests", code="print('PARTNER_CODE')"), tool("submit", code="print('OK')")])
     a2 = Scripted([tool("bash", command=DELETE_TURN.format(n=2)),                     # agent 1's run (its code): allowed
@@ -228,7 +228,7 @@ def test_bash_edits_the_shared_file_under_the_same_rules(tmp_path):
     assert w.boxes == {}                                        # sandboxes stopped at the end
 
 
-@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and slm-sandbox:1")
+@pytest.mark.skipif(not sandbox_image(), reason="needs Docker and siamlm-sandbox:1")
 def test_bash_may_shorten_a_partners_turn_keeping_its_header(tmp_path):
     """The natural bash edit: trim another agent's long turn in place, header kept. Allowed; the trimmed turn is the editor's."""
     trim = ("python3 -c \"import re;p='/ctx/context.txt';t=open(p).read();"
