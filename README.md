@@ -1,6 +1,6 @@
 # SiamLM: Siamese Language Models
 
-SiamLM is a research harness for **siamese worlds**: several LLM agents, of the same model or of different models,
+SiamLM is an experimental harness for language models with shared mental spaces, built around **siamese worlds**: several LLM agents, of the same model or of different models,
 share **one capped, self-edited context**. They act in strict turns, each on its own stream of task items, and
 everything any of them does is written into that one context. Any agent may change or remove any turn, including
 the other agents' turns; only an item statement that is still being worked on is protected (in the setups where
