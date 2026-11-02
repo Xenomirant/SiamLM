@@ -120,8 +120,9 @@ task dial), `state_chain`, and `harbor` ([docs/reference.md](docs/reference.md#t
 **Harbor tasks** (`task.name=harbor harbor.path=<dir>`, `ctx.edit=bash`). Each Harbor task directory (`task.toml`,
 `instruction.md`, `environment/Dockerfile`, `tests/test.sh`) is one item. While an agent works on it, its `bash`
 commands run in the item's own container, built from the Dockerfile, where `/ctx/context.txt` is the shared
-context. On `submit`, `tests/test.sh` runs there, and the `reward.txt` / `reward.json` it writes is the item's
-reward. Example: `examples/harbor/count-errors`. Containers have no network. [docs/harbor.md](docs/harbor.md) lists
+context. On `submit`, `tests/test.sh` runs in a **fresh** container from the task image, with only the agent's
+working directory carried over (the agent's own container is not trusted to grade itself), and the `reward.txt` /
+`reward.json` it writes is the item's reward. Tests that execute code from the working directory remain gameable. Example: `examples/harbor/count-errors`. Containers have no network. [docs/harbor.md](docs/harbor.md) lists
 what is and is not supported.
 
 **The generated `state_chain` task** (no data set; `ctx.edit=bash`). This tests binding by state. A *base* item hides

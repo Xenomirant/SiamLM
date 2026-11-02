@@ -35,7 +35,7 @@ From `src/harbor/models/task/paths.py`, `src/harbor/models/task/config.py` and `
 - `tests/test.sh`: the verifier. Harbor (`src/harbor/verifier/verifier.py`) removes stale reward files, uploads
   `tests/` to `/tests`, runs `chmod +x /tests/test.sh` as root, then `(/tests/test.sh) >
   /logs/verifier/test-stdout.txt 2>&1` in the same container (as `[verifier].user`, else the image's user), under the
-  verifier timeout.
+  verifier timeout. (SiamLM runs it in a fresh container instead; see below.)
 - The reward: `/logs/verifier/reward.json` (a flat object of finite numbers) wins over `/logs/verifier/reward.txt` (one
   number, read as `{"reward": x}`); a missing or empty file is an error, and metrics count it as 0.
 - `solution/solve.sh`: the oracle agent's solution (not used by SiamLM).
@@ -54,10 +54,18 @@ uv run python -m siamlm.run task.name=harbor harbor.path=examples/harbor ctx.edi
   from `environment/` and tagged by the hash of its files, so it is built once. The agent's `bash` commands run in that
   container (in its working directory, as `[agent].user` or the image's user), and SiamLM's context file is mounted
   at `/ctx/context.txt` there, so editing the shared context works as in any bash world.
-- `submit` (or a forced close at `world.max_steps_per_problem`) runs the verifier as Harbor does. The reward becomes the
-  item's `reward` in `results.jsonl` (and `rewards`: every key of reward.json). The item counts as solved when the
-  reward is at least `harbor.solved_at`. The container is then removed; `test-stdout.txt` and the reward file are
-  kept in `<world>/harbor/<item>/verifier/`.
+- `submit` (or a forced close at `world.max_steps_per_problem`) runs the verifier. **Unlike Harbor, the verifier runs
+  in a fresh container from the task's image, not in the agent's.** The agent controls its own container's filesystem
+  (writable root, often as root), so a verifier run there can be hijacked (a `timeout` shadowed earlier in PATH that
+  writes the reward itself, a replaced test.sh, a pre-written reward file; found by review on 2 Nov 2026, now a test).
+  The agent's working directory is copied into the fresh container as its work product, `tests/` is mounted read-only
+  from the task directory, PATH is the standard one and `/logs/verifier` is new. What remains under the agent's
+  control is the working directory's contents: a test that imports from it (a module, `conftest.py`, a
+  `sitecustomize.py` on `sys.path`) executes the agent's code, as in Harbor itself. Treat rewards from such tests as
+  gameable by a trained policy. The reward becomes the item's `reward` in `results.jsonl` (and `rewards`: every key of
+  reward.json; `workdir_copied` says whether the working directory was carried over). The item counts as solved when
+  the reward is at least `harbor.solved_at`. Both containers are then removed; `test-stdout.txt` and the reward file
+  are kept in `<world>/harbor/<item>/verifier/`.
 
 Not supported, by design or for now: multi-step tasks, separate verifier environments, artifacts, MCP servers,
 skills, GPUs, and backends other than Docker. There is **no network**, for the agent or the verifier: tests that

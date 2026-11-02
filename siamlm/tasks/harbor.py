@@ -30,6 +30,7 @@ import hashlib
 import json
 import random
 import re
+import shlex
 import subprocess
 import uuid
 from pathlib import Path
@@ -234,29 +235,58 @@ class HarborTask(Task):
             self.boxes[uid] = box
         return self.boxes[uid]
 
+    VERIFIER_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
     def verify(self, item: dict) -> dict:
-        """Harbor's verifier in the item's container: /tests from tests/, then /tests/test.sh; the reward files."""
+        """Harbor's verifier, in a FRESH container from the task's image, never in the agent's. The agent controls
+        its container's filesystem (writable root, often as root), so a verifier run there can be hijacked: a
+        `timeout` shadowed earlier in PATH that writes the reward itself, a replaced test.sh, a pre-written reward
+        file (review, 2 Nov 2026). Here: the agent's working directory is copied over as its work product; tests/ is
+        mounted read-only from the task directory; PATH is the standard one; the reward directory is new. What stays
+        the agent's is the working directory's contents, which a test that imports from it (a module, conftest.py)
+        executes, as in Harbor itself."""
         box = self.sandbox(item)
-        if not box.alive():
-            box.restart()
+        image, workdir, image_user = self.image(item)
         v = item["config"].get("verifier") or {}
         timeout = float(v.get("timeout_sec", 600))
-        root = ["exec", "-u", "0", box.name, "sh", "-c"]
-        docker(root + ["rm -rf /tests /logs/verifier/reward.txt /logs/verifier/reward.json; mkdir -p /logs/verifier "
-                       "/logs/agent && chmod -R 777 /logs"])
-        docker(["cp", str(Path(item["dir"]) / "tests") + "/.", f"{box.name}:/tests"], timeout=120)
-        docker(root + ["chmod -R a+rX /tests && chmod +x /tests/test.sh"])
-        opts = (["-w", box.workdir] if box.workdir else []) + ["-u", str(v.get("user") or self.image(item)[2])]
+        user = str(v.get("user") or image_user)
+        s = box.s
+        name = f"sbx-harbor-verify-{uuid.uuid4().hex[:12]}"
+        args = ["run", "-d", "--rm", "--init", "--name", name, "--network", "none", "--security-opt", "no-new-privileges",
+                "--pids-limit", str(s.get("pids_limit", 256)), "--memory", str(s.get("memory", "2g")),
+                "--cpus", str(s.get("cpus", 1)), "-v", f"{(Path(item['dir']) / 'tests').resolve()}:/tests:ro",
+                "-e", f"PATH={self.VERIFIER_PATH}"]
         for k, val in (v.get("env") or {}).items():
-            opts += ["-e", f"{k}={val}"]
+            args += ["-e", f"{k}={val}"]
+        out = docker(args + ["--entrypoint", "sleep", image, "infinity"])
+        if out.returncode != 0:
+            raise RuntimeError(f"could not start the verifier container: {out.stderr.decode(errors='replace').strip()[:400]}")
+        root = ["exec", "-u", "0", name, "sh", "-c"]
+        copied = None
         try:
-            run = docker(["exec", *opts, box.name, "sh", "-c",
-                          f"timeout -k 5 {int(timeout)} /tests/test.sh > /logs/verifier/test-stdout.txt 2>&1"],
-                         timeout=timeout + 60)
-            code = run.returncode
-        except subprocess.TimeoutExpired:
-            code = -9
-        read = lambda f: docker(["exec", "-u", "0", box.name, "sh", "-c", f"cat /logs/verifier/{f} 2>/dev/null"])
+            if workdir and box.alive():              # the work product: the agent's working directory, streamed across
+                q = shlex.quote(workdir)
+                src = subprocess.Popen(["docker", "cp", f"{box.name}:{workdir}/.", "-"], stdout=subprocess.PIPE)
+                dst = subprocess.run(["docker", "exec", "-i", "-u", "0", name, "sh", "-c",
+                                      f"mkdir -p {q} && tar -xf - -C {q} && chown -R {shlex.quote(user)} {q}"],
+                                     stdin=src.stdout, capture_output=True, timeout=600)
+                src.stdout.close()
+                copied = src.wait(timeout=60) == 0 and dst.returncode == 0
+            docker(root + ["mkdir -p /logs/verifier /logs/agent && chmod -R 777 /logs"])
+            opts = (["-w", workdir] if workdir else []) + ["-u", user]
+            try:
+                run = docker(["exec", *opts, name, "sh", "-c",
+                              f"timeout -k 5 {int(timeout)} /tests/test.sh > /logs/verifier/test-stdout.txt 2>&1"],
+                             timeout=timeout + 60)
+                code = run.returncode
+            except subprocess.TimeoutExpired:
+                code = -9
+            read = lambda f: docker(["exec", "-u", "0", name, "sh", "-c", f"cat /logs/verifier/{f} 2>/dev/null"])
+            return self._rewards(item, read, code, copied)
+        finally:
+            docker(["rm", "-f", name], timeout=60)
+
+    def _rewards(self, item: dict, read, code: int, copied) -> dict:
         rewards, error = None, None
         raw_json, raw_txt = read("reward.json").stdout.decode(errors="replace"), read("reward.txt").stdout.decode(errors="replace")
         try:
@@ -279,7 +309,7 @@ class HarborTask(Task):
             (folder / "reward.json").write_text(raw_json, encoding="utf-8")
         if raw_txt.strip():
             (folder / "reward.txt").write_text(raw_txt, encoding="utf-8")
-        return {"rewards": rewards, "error": error, "exit_code": code}
+        return {"rewards": rewards, "error": error, "exit_code": code, "workdir_copied": copied}
 
     def release(self, item: dict) -> None:
         box = self.boxes.pop(item["uid"], None)
