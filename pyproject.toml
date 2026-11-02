@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "slm"
+version = "0.1.0"
+description = "Siamese Language Models: several LLM agents sharing one capped, self-edited context"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE.md", "slm/lcb/LICENSE"]
+requires-python = ">=3.10"
+dependencies = ["hydra-core>=1.3,<1.4", "requests>=2.31"]
+
+[project.optional-dependencies]
+tiktoken = ["tiktoken>=0.7"]   # only ctx.count=file uses it (o200k instead of characters / 4)
+dev = ["pytest>=8.0"]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+slm-run = "slm.run:main"
+slm-sweep = "slm.sweep:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["slm"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["data", "outputs"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
