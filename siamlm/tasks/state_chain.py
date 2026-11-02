@@ -300,6 +300,10 @@ class StateChainTask(Task):
     runs_word = "submits"
     last_try_note = ""
     image_id = None
+    HINT = "Later tasks may ask about the answers to earlier tasks, yours or the other agents'."
+
+    def __init__(self, hint: bool = False):
+        self.hint = bool(hint)                   # task.hint: one sentence saying that answers may be needed later
 
     def files(self, item: dict) -> dict:
         return item.get("files") or {}
@@ -314,7 +318,7 @@ class StateChainTask(Task):
 
     def preamble(self) -> str:
         return ("You work on tasks in a Linux shell. Each task has its own folder of files under /work/env/; you can look "
-                "at them with bash, and you submit each answer with submit.")
+                "at them with bash, and you submit each answer with submit." + (" " + self.HINT if self.hint else ""))
 
     def series(self, n: int) -> str:
         return f"You work through a series of {n} {self.items}, one at a time."

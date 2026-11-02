@@ -13,6 +13,7 @@ told and how others' turns are presented. SiamLM makes no claims about results; 
 - [What a world is](#what-a-world-is)
 - [Quickstart](#quickstart)
 - [Task families](#task-families)
+- [Self-steering models](#self-steering-models)
 - [Configuration reference](#configuration-reference)
 - [Outputs](#outputs)
 - [Analysis tools](#analysis-tools)
@@ -184,6 +185,34 @@ a *final* graded call. The world adds everything about the context. `task.name`:
   closed. Two agents; needs `ctx.edit=bash` with `ctx.bash.workspace=kept`. Everything is drawn from the seed.
 
 A new benchmark is a new `Task` subclass in `siamlm/tasks/`.
+
+## Self-steering models
+
+With `provider=modulo`, an agent is a local open-weight model that can also steer its own activations, through
+[Modulo](https://github.com/EigenformAI/modulo) (a third-party library in active development; SiamLM pins the
+commit it was tested with). Besides the world's tools (editing the context, the task's work calls) the model can call
+Modulo's `steer(concept, strength)`, `drop`, `report`, and `create` (make a vector from two system prompts). Modulo
+runs those calls inside the reply; SiamLM writes each one and its result into the shared context as a tool call and
+its answer, so the other agents see them like any other call, and logs them in `steering.jsonl` (with the vectors
+active before and after the reply). Each agent has its own steering state; agents using the same model share one
+copy of the weights (Modulo attaches its hooks only while it generates).
+
+```bash
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU; omit the index for CUDA builds
+uv pip install -e ".[steer]"
+uv run python -m siamlm.run provider=modulo provider.model=Qwen/Qwen2.5-1.5B-Instruct task.name=open \
+    world.setup=external world.identity=names world.rounds=10
+```
+
+- The model must be a Hugging Face causal LM with `model.model.layers` (Qwen, Llama, Mistral style) whose chat
+  template takes a `system` role. On first use Modulo extracts its starter vectors (minutes on a CPU) into
+  `provider.vectors_dir`.
+- `provider.control` runs Modulo's controlled-study conditions (`real`, `sham`: nothing applied, `random`: a random
+  direction, `assign`: one at random), disclosed to the model as Modulo does; a steering self-report means little
+  without them.
+- `provider.include_community` is off: only the starter vectors and the model's own `create`d ones are offered.
+- `tests/test_modulo.py` checks every part of Modulo's interface SiamLM uses, so an upstream change fails there
+  first; `SIAMLM_MODULO_MODEL=Qwen/Qwen2.5-0.5B-Instruct` runs the real-model tests on a CPU.
 
 ## Configuration reference
 

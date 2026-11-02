@@ -59,6 +59,12 @@ What is ours (MIT, like the rest): the CodeEval-Pro grader and its driver (`siam
 builders (`siamlm/tasks/codeeval_pro.py`, `siamlm/tasks/cep_streams.py`), and the procedurally generated `state_chain`
 task (`siamlm/tasks/state_chain.py`), which uses no data set.
 
+## Modulo (optional dependency, not included)
+
+`provider=modulo` uses Modulo (https://github.com/EigenformAI/modulo), installed with the `steer` extra from the
+commit pinned in pyproject.toml. Its README states the MIT licence (the repository has no LICENSE file at that
+commit); no Modulo code is copied into SiamLM. Its vectors, and any it downloads, carry their own sources' licences.
+
 ## Other
 
 - The `open` task's weak level follows the setup of a public post on attractor states in model self-conversation

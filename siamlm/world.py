@@ -891,6 +891,14 @@ class World:
             thought = a.file.append(Turn("assistant", neutralize("[reasoning]\n" + resp.internal_reasoning.strip()), a.k, "reasoning"),
                           self.round)
             a.stats["reasoning_turns"] = a.stats.get("reasoning_turns", 0) + 1
+        for s in getattr(resp, "steering", None) or []:  # provider.name=modulo: the model's own steering calls (run by the
+            made = a.file.append(Turn("assistant", neutralize(f"[{s['name']}] " + json.dumps(s["arguments"], ensure_ascii=False)),
+                                      a.k, "call", call={"name": s["name"], "arguments": s["arguments"], "content": ""}),
+                                 self.round)                       # provider, in the reply) and their results: turns
+            a.file.append(Turn("user", neutralize(s["message"]), a.k, "result", reply_to=made.id), self.round)
+            a.stats["steering_calls"] = a.stats.get("steering_calls", 0) + 1
+            write_jsonl(self.out / "steering.jsonl", {"round": self.round, "agent": a.k, "model": a.model, **s,
+                                                      "state": getattr(resp, "steering_state", None)})
         cut = resp.finish_reason == "length"
         if cut and not words and not resp.tool_calls and not (resp.usage or {}).get("completion_tokens"):
             cut = False                                # 27 Oct: an empty "length" reply with 0 tokens (a provider artefact,

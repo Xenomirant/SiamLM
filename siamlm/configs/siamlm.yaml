@@ -161,6 +161,7 @@ task:
   gap: 2                     # codeeval_pro: items between the two items of a pair (stream positions)
   rotate: 0                  # codeeval_pro: the seeded pair order is rotated by this many pairs (counterbalancing:
                              # the same layout of slot types, other pairs in each slot)
+  hint: false                # state_chain: true = the instructions say that later tasks may ask about earlier answers
   gate: false                # codeeval_pro, state_chain: true = the second item of a cross-agent link is not handed
                              # out before the first is closed (the agent takes its next item meanwhile, or waits)
   data: ${data.dir}/codeeval_pro   # codeeval_pro: the folder scripts/fetch_codeeval_pro.py writes

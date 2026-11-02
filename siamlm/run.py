@@ -99,7 +99,7 @@ def run(cfg, make_provider=None, grader_factory=None):
                                              gate=bool(tc.get("gate", False)))
             out.mkdir(parents=True, exist_ok=True)
             (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-            return World(cfg, int(seed), st, out, state_chain.StateChainTask(), make_provider,
+            return World(cfg, int(seed), st, out, state_chain.StateChainTask(bool(tc.get("hint", False))), make_provider,
                          label=f"{cell_name(cfg)}/s{seed}").run()
         grader = grader_factory()
         try:

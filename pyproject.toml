@@ -14,6 +14,9 @@ dependencies = ["hydra-core>=1.3,<1.4", "requests>=2.31"]
 
 [project.optional-dependencies]
 tiktoken = ["tiktoken>=0.7"]   # only ctx.count=file uses it (o200k instead of characters / 4)
+# provider.name=modulo: local models that steer their own activations. Modulo is a third-party library in active
+# development; this pins the commit SiamLM was tested with (tests/test_modulo.py checks the interface it uses).
+steer = ["modulo @ git+https://github.com/EigenformAI/modulo@e481fbf22d58175409588a7f6402bd636675310b", "torch>=2.4", "transformers>=4.46,<5", "accelerate>=1.0"]
 dev = ["pytest>=8.0"]
 
 [dependency-groups]

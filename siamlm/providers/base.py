@@ -35,6 +35,9 @@ class ProviderResponse:
     latency_s: float = 0.0           # time spent in HTTP requests only (no backoff waits)
     response_id: str | None = None   # provider generation/request ID when available
     response_model: str | None = None
+    steering: list[dict] = field(default_factory=list)   # provider.name=modulo: the model's own steering calls, run
+                                                         # inside the reply ({name, arguments, ok, message})
+    steering_state: dict | None = None                   # modulo: vectors active before / after the reply
 
 
 class MockProvider:
@@ -245,11 +248,16 @@ def _openrouter(cfg):
                                     cfg.get("drop_unsupported_params"))
 
 
-PROVIDERS = {"mock": lambda cfg: MockProvider(cfg.model), "openrouter": _openrouter}
+def _modulo(cfg):
+    from .modulo import make_modulo                  # imports torch, transformers and modulo only when used
+    return make_modulo(cfg)
+
+
+PROVIDERS = {"mock": lambda cfg: MockProvider(cfg.model), "openrouter": _openrouter, "modulo": _modulo}
 
 
 def make_provider(cfg):
-    """Build the provider named by `provider.name`: mock, openrouter, or a dotted import path to a factory taking the
+    """Build the provider named by `provider.name`: mock, openrouter, modulo (local self-steering models), or a dotted import path to a factory taking the
     provider config (e.g. provider.name=my_package.providers.make_vllm)."""
     name = str(cfg.name)
     if name in PROVIDERS:

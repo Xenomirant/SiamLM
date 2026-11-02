@@ -138,9 +138,10 @@ def study(a) -> list[tuple[str, list[str]]]:
     if a.design == "s3b":                          # binding by state (siamlm/tasks/state_chain.py): gate on and off
         for body in STUDY_PAIRS:
             for gate in (True, False):
-                out.append((f"{body}_chain-L{a.length}_{'gate' if gate else 'nogate'}", pair(body, budget(body))
-                            + PRESENTATION[a.presentation]
+                out.append((f"{body}_chain-L{a.length}_{'gate' if gate else 'nogate'}{'_hint' if a.hint else ''}",
+                            pair(body, budget(body)) + PRESENTATION[a.presentation]
                             + ["task.name=state_chain", f"task.length={a.length}", f"task.gate={str(gate).lower()}",
+                               f"task.hint={str(a.hint).lower()}",
                                "world.max_work_calls=1", "world.after_stream=stay"]))
         return out
     if a.design == "dial":                         # the task dial: full task / weak goal / no goal
@@ -172,6 +173,8 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--arrangement", default="mixed", help="s3: CodeEval-Pro stream arrangement")
     ap.add_argument("--length", type=int, default=12, help="s3, s3b: items per agent")
     ap.add_argument("--gap", type=int, default=2, help="s3: items between the two items of a pair")
+    ap.add_argument("--hint", action="store_true", help="s3b: the instructions say later tasks may ask about earlier "
+                    "answers (task.hint)")
     ap.add_argument("--after-stream", default="leave", choices=["leave", "stay"], help="s3: an agent whose stream is "
                     "finished leaves, or stays with no problem until the world ends")
     ap.add_argument("--end-over-limit", type=int, default=3, help="held calls (or replies) in a row, with no change that "
