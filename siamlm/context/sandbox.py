@@ -74,6 +74,8 @@ def _drain(stream, cap: int, sink: dict, key: str) -> None:
 
 
 class Sandbox:
+    workdir = "/work"                        # where commands run
+
     def __init__(self, settings):
         self.s = settings
         self.name, self.id, self.keep, self.restarts = f"sbx-{uuid.uuid4().hex[:12]}", None, "1", 0
@@ -138,9 +140,8 @@ class Sandbox:
         started, sink = time.time(), {}
         # the sweep runs inside the same exec, so a background job cannot hold the output streams open
         # (the count goes to stderr after a marker: no path the command could have planted something at)
-        wrapper = ('timeout -k 5 "$1" bash -c "$2"; rc=$?; k=$(python3 -c "$3" "$4" 2>/dev/null); '
-                   'printf "\\n__cmd_end__%s\\n" "$k" >&2; exit $rc')
-        proc = subprocess.Popen(["docker", "exec", "-w", "/work", self.name, "sh", "-c", wrapper, "sh", str(limit), command, KILL_OTHERS, self.keep],
+        proc = subprocess.Popen(["docker", "exec", *self.exec_options(), self.name, "sh", "-c", self.WRAPPER, "sh", str(limit),
+                                 command, KILL_OTHERS, self.keep],
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         readers = [threading.Thread(target=_drain, args=(proc.stdout, cap, sink, "stdout")),
                    threading.Thread(target=_drain, args=(proc.stderr, cap, sink, "stderr"))]
@@ -167,6 +168,12 @@ class Sandbox:
                 "stdout_bytes": sink.get("stdout_bytes", 0), "stderr_bytes": max(0, sink.get("stderr_bytes", 0) - (len(tail) - tail.rfind(MARK) if MARK in tail else 0)),
                 "timed_out": code in (124, 137, -9) and elapsed >= limit - 1, "seconds": round(elapsed, 2),
                 "killed_processes": killed, "leftover_processes": leftover}
+
+    WRAPPER = ('timeout -k 5 "$1" bash -c "$2"; rc=$?; k=$(python3 -c "$3" "$4" 2>/dev/null); '
+               'printf "\\n__cmd_end__%s\\n" "$k" >&2; exit $rc')
+
+    def exec_options(self) -> list[str]:
+        return ["-w", self.workdir]
 
     def read_tree(self, path: str, cap: int = 20000) -> dict:
         """{relative path: {bytes, sha1, text (the first `cap` characters, decoded leniently)}} for every regular file

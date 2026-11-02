@@ -1,0 +1,17 @@
+# Any OpenAI-compatible POST /chat/completions endpoint: a vLLM or SGLang server of a policy being trained
+# (vllm serve <model> --enable-auto-tool-choice --tool-call-parser hermes), OpenAI itself, a local gateway.
+# The key is read from the environment variable named by api_key_env at call time and never written anywhere; with
+# require_key: false and no key set, no Authorization header is sent (local servers).
+name: openai
+model: Qwen/Qwen2.5-0.5B-Instruct
+base_url: http://localhost:8000/v1
+api_key_env: OPENAI_API_KEY
+require_key: false
+temperature: 1
+top_p: 1
+timeout: 600
+max_retries: 2
+max_tokens: 4000
+max_backoff_s: 30
+extra_body: {}         # extra request fields, e.g. +provider.extra_body.chat_template_kwargs.enable_thinking=false
+drop_unsupported_params: false

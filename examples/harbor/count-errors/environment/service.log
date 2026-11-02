@@ -1,0 +1,8 @@
+2026-11-01T08:00:01 INFO  service started
+2026-11-01T08:00:04 ERROR could not open cache file
+2026-11-01T08:01:10 INFO  request 1 served
+2026-11-01T08:01:12 WARN  slow request (2.1 s)
+2026-11-01T08:02:30 Error retry 1 of 3 failed
+2026-11-01T08:02:31 INFO  request 2 served
+2026-11-01T08:03:00 DEBUG error budget at 40 %
+2026-11-01T08:05:00 INFO  shutting down

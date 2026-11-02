@@ -1,0 +1,26 @@
+# A local Hugging Face causal LM through transformers (siamlm/providers/hf.py; pip install "siamlm[hf]"). The chat
+# template must take a system role and tools (Qwen2.5/Qwen3, Llama-3.1+, Hermes-style <tool_call> output). On CPU use
+# a small model, e.g. Qwen/Qwen2.5-0.5B-Instruct, and a small provider.max_tokens.
+name: hf
+model: Qwen/Qwen2.5-0.5B-Instruct
+device: cpu
+dtype: float32
+temperature: 0.7
+top_p: 0.9
+timeout: 600
+max_retries: 0
+# steer: EXPERIMENTAL, off by default (siamlm/steer.py, docs/steering.md; pip install "siamlm[steer]"). When enabled,
+# the agent gets one more tool, steer(concept, strength), that adds a steering vector to its own later generations.
+# Per agent: world.agent_providers=[{steer: {enabled: true}}, {}] steers agent 1 only.
+steer:
+  enabled: false
+  concepts: [curiosity, introspection, emotion, confidence]   # Modulo starter vectors, extracted on first use
+  vectors_dir: ${output.directory}/steer_vectors   # Modulo's registry layout: <vectors_dir>/<model slug>/registry.yaml
+  layer: null          # null: the middle layer (where vectors are extracted)
+  extract_questions: 20  # questions per prompt when a missing vector is extracted (Modulo's extract_vector)
+  max_strength: 10     # |strength| is clamped to this; 15 = a push as large as the layer's typical activation norm
+  decay: 0.85          # after each generation of the agent, every active strength is multiplied by this
+  floor: 0.5           # a strength below this in size is removed
+  max_active: 2        # vectors active at once (a call for one more is refused)
+  control: real        # real | sham (nothing is added) | random (a fixed random direction of the same size);
+                       # the model is told the same in every condition

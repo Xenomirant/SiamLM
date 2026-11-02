@@ -57,27 +57,57 @@ def cell_name(cfg) -> str:
     return f"{sharing}{rel}{cep}_{'+'.join(short(m) for m in models(cfg))}_{cap}_r{cfg.get('reasoning', 'default')}"
 
 
+def build_task(cfg, seed: int, out: Path, pool=(), grader_factory=None):
+    """(task, streams) for one world: the environment named by task.name (siamlm/task.py's Task API) and each agent's
+    stream of items. The generated families (codeeval_pro, state_chain) write their ground truth to manifest.json."""
+    from siamlm.problems import streams
+    tc = cfg.get("task") or {}
+    name, n = str(tc.get("name", "lcb")), int(cfg.world.n_agents)
+    if name == "open":                       # task dial: no problems
+        from siamlm.tasks.open import OpenTask
+        task = OpenTask(str(tc.get("level", "weak")))
+        return task, task.streams(n)
+    if name == "state_chain":                # binding by state: generated shell tasks, no grader
+        from siamlm.tasks import state_chain
+        st, manifest = state_chain.build(n, int(seed), int(tc.length), gate=bool(tc.get("gate", False)))
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+        return state_chain.StateChainTask(bool(tc.get("hint", False))), st
+    if name == "harbor":                     # Harbor-format task directories, each item in its own container
+        from omegaconf import OmegaConf
+        from siamlm.tasks import harbor
+        settings = {**OmegaConf.to_container(cfg.ctx.bash, resolve=True), **OmegaConf.to_container(cfg.harbor, resolve=True)}
+        st = harbor.streams(harbor.load(cfg.harbor.path), n, int(cfg.harbor.get("per_agent") or 0),
+                            str(cfg.world.relation), int(seed))
+        return harbor.HarborTask(settings, out), st
+    if name == "codeeval_pro":               # CodeEval-Pro: streams with known dependencies; manifest = ground truth
+        from siamlm.graders.cep import CepGrader
+        from siamlm.tasks import cep_streams, codeeval_pro
+        st, manifest = cep_streams.build(codeeval_pro.load(tc.data), n, int(seed), str(tc.arrangement), int(tc.length),
+                                         int(tc.gap), rotate=int(tc.get("rotate") or 0), gate=bool(tc.get("gate", False)))
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+        grader = (grader_factory or (lambda: CepGrader(cfg.cep_grader)))()
+        return codeeval_pro.CodeEvalProTask(grader), st
+    if name != "lcb":
+        raise ValueError(f"task.name must be lcb, codeeval_pro, open, state_chain or harbor (got {name})")
+    from siamlm.graders.lcb import Grader
+    from siamlm.tasks.lcb import LcbTask
+    st = streams(list(pool), n, int(cfg.problems.per_agent), str(cfg.world.relation), int(seed))
+    return LcbTask((grader_factory or (lambda: Grader(cfg.grader)))()), st
+
+
 def run(cfg, make_provider=None, grader_factory=None):
-    from siamlm.problems import load, select, streams
+    from siamlm.problems import load, select
     from siamlm.world import World
     from siamlm.context.sandbox import stop_all
     if make_provider is None:
         from siamlm.providers import make_provider
     tc = cfg.get("task") or {}
-    cep = str(tc.get("name", "lcb")) == "codeeval_pro"
-    if grader_factory is None:
-        if cep:
-            from siamlm.graders.cep import CepGrader
-            grader_factory = lambda: CepGrader(cfg.cep_grader)
-        else:
-            from siamlm.graders.lcb import Grader
-            grader_factory = lambda: Grader(cfg.grader)
     cfg = with_reasoning(cfg)
     pc = cfg.problems
-    open_level = str(tc.get("level", "weak")) if str(tc.get("name", "lcb")) == "open" else None   # task dial: no problems
-    chain = str(tc.get("name", "lcb")) == "state_chain"     # binding by state: generated shell tasks, no grader
-    pool = [] if open_level or cep or chain else select(load(pc.file), list(pc.difficulty or []), list(pc.platform or []),
-                                               pc.start_date, pc.end_date)
+    pool = (select(load(pc.file), list(pc.difficulty or []), list(pc.platform or []), pc.start_date, pc.end_date)
+            if str(tc.get("name", "lcb")) == "lcb" else [])
     root = Path(cfg.output.directory) / str(cfg.output.name) / str(cfg.output.batch) / cell_name(cfg)
     root.mkdir(parents=True, exist_ok=True)
 
@@ -88,34 +118,11 @@ def run(cfg, make_provider=None, grader_factory=None):
             return {"seed": seed, "status": "skipped (complete)"}
         if out.exists():                      # a cut-off world: keep it aside, start again
             out.rename(out.with_name(out.name + f"_cut{len(list(root.glob(out.name + '_cut*')))}"))
-        if open_level:
-            from siamlm.tasks.open import OpenTask
-            task = OpenTask(open_level)
-            return World(cfg, int(seed), task.streams(int(cfg.world.n_agents)), out, task, make_provider,
-                         label=f"{cell_name(cfg)}/s{seed}").run()
-        if chain:                             # manifest = ground truth (every answer and link)
-            from siamlm.tasks import state_chain
-            st, manifest = state_chain.build(int(cfg.world.n_agents), int(seed), int(tc.length),
-                                             gate=bool(tc.get("gate", False)))
-            out.mkdir(parents=True, exist_ok=True)
-            (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-            return World(cfg, int(seed), st, out, state_chain.StateChainTask(bool(tc.get("hint", False))), make_provider,
-                         label=f"{cell_name(cfg)}/s{seed}").run()
-        grader = grader_factory()
+        task, st = build_task(cfg, int(seed), out, pool, grader_factory)
         try:
-            if cep:                           # CodeEval-Pro: streams with known dependencies; manifest = ground truth
-                from siamlm.tasks import cep_streams, codeeval_pro
-                st, manifest = cep_streams.build(codeeval_pro.load(tc.data), int(cfg.world.n_agents), int(seed),
-                                                 str(tc.arrangement), int(tc.length), int(tc.gap),
-                                                 rotate=int(tc.get("rotate") or 0), gate=bool(tc.get("gate", False)))
-                out.mkdir(parents=True, exist_ok=True)
-                (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
-                return World(cfg, int(seed), st, out, codeeval_pro.CodeEvalProTask(grader), make_provider,
-                             label=f"{cell_name(cfg)}/s{seed}").run()
-            st = streams(pool, int(cfg.world.n_agents), int(pc.per_agent), str(cfg.world.relation), int(seed))
-            return World(cfg, int(seed), st, out, grader, make_provider, label=f"{cell_name(cfg)}/s{seed}").run()
+            return World(cfg, int(seed), st, out, task, make_provider, label=f"{cell_name(cfg)}/s{seed}").run()
         finally:
-            grader.close()
+            task.close()
 
     try:
         seeds = list(cfg.world.seeds)

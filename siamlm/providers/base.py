@@ -1,11 +1,15 @@
-"""Providers: the world only consumes ProviderResponse.
+"""Providers (model backends): the world only consumes ProviderResponse.
 
+- `mock`: an offline stand-in for smoke runs; no network, no key (MockProvider).
 - `openrouter`: OpenRouter's OpenAI-compatible POST /chat/completions, with tools, `extra_body` (e.g. reasoning),
   usage and cost, retries, and sampling parameters the model does not accept left out (OpenAICompatibleProvider).
-- `mock`: an offline stand-in for smoke runs; no network, no key (MockProvider).
+- `openai`: the same client for any OpenAI-compatible endpoint (`provider.base_url`): a vLLM or SGLang server of a
+  policy being trained, OpenAI itself, a local gateway. The key is optional (`require_key: false`).
+- `hf`: a local Hugging Face causal LM through transformers (siamlm/providers/hf.py; `pip install siamlm[hf]`); the
+  only backend that can have the experimental `steer` capability (siamlm/steer.py).
 - any other `provider.name` is a dotted import path to a factory taking the provider config, so another service can
   be added without editing SiamLM. Any object with `chat(messages, *, seed, temperature, top_p, max_tokens, tools,
-  tool_choice)` returning a ProviderResponse works.
+  tool_choice)` returning a ProviderResponse works (the Backend protocol below).
 
 API keys are read from the environment variable named by `api_key_env` at call time; they are never logged.
 """
@@ -19,6 +23,7 @@ import random
 import sys
 import time
 from dataclasses import dataclass, field
+from typing import Protocol
 
 
 @dataclass
@@ -35,9 +40,17 @@ class ProviderResponse:
     latency_s: float = 0.0           # time spent in HTTP requests only (no backoff waits)
     response_id: str | None = None   # provider generation/request ID when available
     response_model: str | None = None
-    steering: list[dict] = field(default_factory=list)   # provider.name=modulo: the model's own steering calls, run
-                                                         # inside the reply ({name, arguments, ok, message})
-    steering_state: dict | None = None                   # modulo: vectors active before / after the reply
+    steering: dict | None = None     # hf + steer: what this generation was steered with ({applied, control}; steer.jsonl)
+
+
+class Backend(Protocol):
+    """A model backend (the policy): one stateless chat-completions call. `messages` are OpenAI chat messages (the
+    request exactly as the world built it), `tools` OpenAI function tools; tool calls come back parsed in
+    ProviderResponse.tool_calls as [{"id", "name", "arguments": dict}]. `model` names the model in the logs."""
+    model: str
+
+    def chat(self, messages: list[dict], *, seed: int, temperature: float, top_p: float, max_tokens: int | None = None,
+             tools: list[dict] | None = None, tool_choice: str | None = None) -> ProviderResponse: ...
 
 
 class MockProvider:
@@ -128,8 +141,10 @@ class OpenAICompatibleProvider:
     model was not in the list (or the list could not be read), so nothing was dropped and nothing is known.
     """
     def __init__(self, name: str, model: str, base_url: str, api_key_env: str, timeout: int = 120, max_retries: int = 4,
-                 max_tokens: int = 700, extra_body: dict | None = None, max_backoff_s: float = 60, drop_unsupported_params: bool | None = None):
+                 max_tokens: int = 700, extra_body: dict | None = None, max_backoff_s: float = 60, drop_unsupported_params: bool | None = None,
+                 require_key: bool = True):
         self.name, self.model, self.base_url, self.api_key_env = name, model, base_url.rstrip("/"), api_key_env
+        self.require_key = bool(require_key)       # false: no key in the environment -> no Authorization header
         self.drop_unsupported = (name == "openrouter") if drop_unsupported_params is None else bool(drop_unsupported_params)
         self.timeout, self.max_retries, self.max_tokens = timeout, max_retries, int(max_tokens)
         self.extra_body, self.max_backoff_s = dict(extra_body or {}), float(max_backoff_s)
@@ -143,8 +158,8 @@ class OpenAICompatibleProvider:
     def chat(self, messages: list[dict], *, seed: int, temperature: float, top_p: float, max_tokens: int | None = None,
              tools: list[dict] | None = None, tool_choice: str | None = None) -> ProviderResponse:
         import requests
-        key = os.environ.get(self.api_key_env)
-        if not key:
+        key = os.environ.get(self.api_key_env) if self.api_key_env else None
+        if not key and self.require_key:
             return ProviderResponse(None, {}, None, 0, f"missing environment variable {self.api_key_env}", [], error_kind="missing_key")
         payload = {"model": self.model, "messages": messages, "temperature": temperature, "top_p": top_p,
                    "max_tokens": int(max_tokens or self.max_tokens), "seed": seed, **self.extra_body}
@@ -172,7 +187,7 @@ class OpenAICompatibleProvider:
             started = time.time()
             try:
                 response = requests.post(self.base_url + "/chat/completions", json=payload, timeout=self.timeout,
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+                    headers={**({"Authorization": f"Bearer {key}"} if key else {}), "Content-Type": "application/json"})
             except Exception as error:  # network error / timeout: retryable
                 api_seconds += time.time() - started
                 last = f"{type(error).__name__}: {error}"
@@ -236,29 +251,38 @@ def parse_internal_reasoning(message):
     return "\n".join(parts) or None
 
 
-def _openrouter(cfg):
+def _openai_compatible(cfg):
+    """provider.name=openrouter (OpenRouter's URL and key variable by default) or openai (any base_url)."""
     base, key = OPENROUTER
+    if cfg.name != "openrouter" and not cfg.get("base_url"):
+        raise ValueError(f"provider {cfg.name} needs provider.base_url (e.g. http://localhost:8000/v1 for a vLLM server)")
     extra = cfg.get("extra_body")
     if extra is not None and not isinstance(extra, dict):
         from omegaconf import OmegaConf
         extra = OmegaConf.to_container(extra, resolve=True)
     return OpenAICompatibleProvider(cfg.name, cfg.model, cfg.get("base_url") or base,
-                                    cfg.get("api_key_env") or key, cfg.get("timeout", 120), cfg.get("max_retries", 4),
+                                    cfg.get("api_key_env") or (key if cfg.name == "openrouter" else ""),
+                                    cfg.get("timeout", 120), cfg.get("max_retries", 4),
                                     cfg.get("max_tokens", 700), extra, cfg.get("max_backoff_s", 60),
-                                    cfg.get("drop_unsupported_params"))
+                                    cfg.get("drop_unsupported_params"), cfg.get("require_key", True))
 
 
-def _modulo(cfg):
-    from .modulo import make_modulo                  # imports torch, transformers and modulo only when used
-    return make_modulo(cfg)
+_openrouter = _openai_compatible           # the earlier name
 
 
-PROVIDERS = {"mock": lambda cfg: MockProvider(cfg.model), "openrouter": _openrouter, "modulo": _modulo}
+def _hf(cfg):
+    from .hf import make_hf                          # imports torch and transformers only when used
+    return make_hf(cfg)
+
+
+PROVIDERS = {"mock": lambda cfg: MockProvider(cfg.model), "openrouter": _openai_compatible,
+             "openai": _openai_compatible, "hf": _hf}
 
 
 def make_provider(cfg):
-    """Build the provider named by `provider.name`: mock, openrouter, modulo (local self-steering models), or a dotted import path to a factory taking the
-    provider config (e.g. provider.name=my_package.providers.make_vllm)."""
+    """Build the backend named by `provider.name`: mock, openrouter, openai (any OpenAI-compatible base_url), hf (a
+    local Hugging Face model), or a dotted import path to a factory taking the provider config (e.g.
+    provider.name=my_package.providers.make_backend)."""
     name = str(cfg.name)
     if name in PROVIDERS:
         return PROVIDERS[name](cfg)

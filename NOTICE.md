@@ -59,11 +59,27 @@ What is ours (MIT, like the rest): the CodeEval-Pro grader and its driver (`siam
 builders (`siamlm/tasks/codeeval_pro.py`, `siamlm/tasks/cep_streams.py`), and the procedurally generated `state_chain`
 task (`siamlm/tasks/state_chain.py`), which uses no data set.
 
+## Harbor (formats followed; no code copied)
+
+**Harbor** (harborframework.com; github.com/laude-institute/harbor, now github.com/harbor-framework/harbor; Apache-2.0;
+read at commit 00dc6a7). SiamLM follows two of its published formats, with code of our own:
+
+- the task directory format (`task.toml`, `instruction.md`, `environment/Dockerfile`, `tests/test.sh`, the reward in
+  `/logs/verifier/reward.txt` or `reward.json`), read by `siamlm/tasks/harbor.py`; the canary-line stripping follows
+  Harbor's documented behaviour;
+- the Agent Trajectory Interchange Format (ATIF, `rfcs/0001-trajectory-format.md`, ATIF-v1.8), written by
+  `siamlm/export.py`, including the RFC's context-management convention.
+
+The example task `examples/harbor/count-errors` is ours (MIT). Its layout mirrors Harbor's `examples/tasks/hello-world`.
+
 ## Modulo (optional dependency, not included)
 
-`provider=modulo` uses Modulo (https://github.com/EigenformAI/modulo), installed with the `steer` extra from the
-commit pinned in pyproject.toml. Its README states the MIT licence (the repository has no LICENSE file at that
-commit); no Modulo code is copied into SiamLM. Its vectors, and any it downloads, carry their own sources' licences.
+The experimental `steer` capability (`siamlm/steer.py`) uses Modulo (https://github.com/EigenformAI/modulo) as a library
+for steering vectors only: its registry layout and its vector extraction (`extract_vector`, `save_and_register`,
+and the starter vector definitions). It is installed with the `steer` extra from the commit pinned in pyproject.toml.
+Modulo's README states the MIT licence; the repository has no LICENSE file at that commit. No Modulo code is copied
+into SiamLM. The forward-hook steering in `siamlm/steer.py` is our own code; tracking absolute positions under a KV
+cache follows the idea of Modulo's hooks. Vectors carry their own sources' licences.
 
 ## Other
 

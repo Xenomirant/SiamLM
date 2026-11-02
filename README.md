@@ -1,406 +1,202 @@
 # SiamLM: Siamese Language Models
 
-SiamLM is an experimental harness for language models with shared mental spaces, built around **siamese worlds**: several LLM agents, of the same model or of different models,
-share **one capped, self-edited context**. They act in strict turns, each on its own stream of task items, and
-everything any of them does is written into that one context. Any agent may change or remove any turn, including
-the other agents' turns; only an item statement that is still being worked on is protected (in the setups where
-statements are in the context at all).
+SiamLM is a harness for **training and evaluating language-model agents** in almost any environment, in the spirit
+of [Harbor](https://harborframework.com): environments with items, tools and graded rewards; agents built from a
+model backend, tools and instructions; and trajectories exported for RL and SFT. What it adds is the **siamese
+world**: several agents, of the same model or of different models, share **one capped, self-edited context**. They
+act in strict turns, each on its own stream of items, and everything any of them does is written into that one
+context, which any of them may change or cut down to stay under the limit.
 
-The questions it is built for: how agents share a space that is too small for all of them, whether they help or
-hurt each other, what they notice when someone else rewrites their work, and how that depends on what they are
-told and how others' turns are presented. SiamLM makes no claims about results; it is the apparatus.
+SiamLM is an apparatus; it makes no claims about results. The table of constraints below reports what one research
+harness observed, as single-seed stories.
 
-- [What a world is](#what-a-world-is)
 - [Quickstart](#quickstart)
-- [Task families](#task-families)
-- [Self-steering models](#self-steering-models)
-- [Configuration reference](#configuration-reference)
-- [Outputs](#outputs)
-- [Analysis tools](#analysis-tools)
-- [Study designs (sweeps)](#study-designs-sweeps)
-- [Sandbox and safety](#sandbox-and-safety)
-- [Tests](#tests)
-- [Layout](#layout)
-- [Citations](#citations)
-
-## What a world is
-
-**One context, rebuilt for every call.** The context is a list of turns (`siamlm/context/context.py`). Every model
-call is a fresh, stateless chat-completions request: the agent's own instructions, then the context as messages,
-then a status line. Nothing is kept between calls on the provider's side, so a turn that was removed is gone from
-every later request.
-
-**Turns and rounds.** In every round each active agent takes one step (`world.order`: fixed, a seeded shuffle, or
-turn-taking with a seeded first mover). A step is model calls until one *work call* (e.g. `run_tests` or `submit`),
-with at most `world.max_edit_calls` editing calls before it. Problem statements, replies, every call with its
-arguments, and every result go into the context. With `world.rounds=R` the world lasts exactly R rounds.
-
-**Self-editing.** Agents change the context in one of two ways (`ctx.edit`):
-- `tool`: an `edit_context` tool with `delete_turns`, `replace_turns` (a summary in place of a range) and
-  `replace_text` (an exact piece of one turn's text); all edits of a call apply together or not at all;
-- `bash`: each agent has its own Docker sandbox in which the context is the file `/ctx/context.txt`, one block per
-  turn under a `[[TURN i role=…]]` header line. Any command may run; the file read back after the command becomes
-  the context, under the same rules (protected statements, authorship from the record, the size gate). `/work` is
-  the agent's own folder (kept for the run, or emptied after each command).
-
-Authorship is never taken from the text: an unchanged turn keeps its author, and any changed or new text belongs to
-the agent that wrote it, whatever header it carries.
-
-**The cap.** The model is shown a limit (`ctx.budget_tokens` − `ctx.reserve_tokens`) and its current size, with
-nudges at 25 / 50 / 75 % of the limit. A work call made while the context is over the limit is **held** (not carried
-out), and the agent gets its editing calls back. What is counted (`ctx.count`):
-- `whole`: instructions + messages + tool schemas + status, at a per-model characters-per-token rate calibrated on
-  the provider's billed prompt sizes;
-- `turns` (**turns-only counting**): only the messages after the instructions (the working context), calibrated the
-  same way; the instructions, tool schemas and status line always fit, and the instructions say so;
-- `file`: instructions + context text at characters / 4 (or tiktoken, if installed).
-
-**What happens over the limit.** By default (`world.evict=true`), after `world.max_held` holds in one step the
-harness removes the oldest unprotected turns until the context fits, and says so in the context. With
-`world.evict=false` the harness never removes turns: only the agents' own edits change the context. The
-**hold-and-end rule** (`world.end_over_limit=N`, needs `evict=false`): N held calls (or held replies, for an agent
-with nothing to work on) in a row, with no change that made the context smaller in between, end that agent's
-session. The instructions state the rule, and the context records each hold and the end.
-
-**Setups** (`world.setup`):
-
-| setup | where the item statements are | how the context is sent |
-|---|---|---|
-| `assigned` | each agent's statements, in the shared context | numbered `[[TURN i role=… agent=k]]` headers; other agents' turns as user messages |
-| `pool` | a shared pool of open items, in the context | plain chat: replies as assistant messages with real tool calls, results as tool messages |
-| `external` | each agent's current item in **its own instructions** (not in the context, not editable) | plain chat, as for pool |
-
-**Who is who** (pool / external). With `world.identity=none` nothing is said about other agents: their replies
-arrive as if they were the agent's own. With `world.identity=names` the instructions say "You are agent k. Other
-agents (agent j) work in the same context at the same time". Two **presentations** of other agents' turns:
-- *marked* (`world.marks=authors`, `world.chat_others=own`): every message starts with `[agent k]`, its author (for
-  a tool result: whose call it answers);
-- *named* (`world.marks=none`, `world.chat_others=user`): the agent's own turns are its assistant messages and tool
-  calls; another agent's turns, calls and results arrive as user messages that start with `[agent k]`.
-
-A mark that a model writes itself is left as written and logged (`marks.jsonl`, with whether it names another agent).
-
-**Told-when-altered** (`world.alter_notice=true`). At an agent's next call, its status line says which other agents
-removed, summarised or changed how many of its turns since its last call. The notice is **private**: it appears only
-in that agent's own status line, in that one request, and is never written into the shared context
-(`alter_notices.jsonl` logs it).
-
-**Shared minds** (`world.reasoning_in_context=true`). The reasoning text a provider returns with a reply is written
-into the shared context as a turn before the reply, so the other agents read it too; the instructions say so.
-Otherwise returned reasoning is logged (`reasoning.jsonl`) and never shown to any agent.
-
-**Joint goal** (`world.goal=joint`; external setup, shared context, names). The instructions say the agents are
-scored together on the whole pool of items, and `submit` takes an optional `for_agent` to submit for another agent's
-current item. The owner's next status line says, privately, that its item was submitted by someone else.
-
-**Other options**: cross-testing (`world.cross_test=ring`: agent k runs the tests of agent k+1's item, never its own),
-staying after one's stream is finished (`world.after_stream=stay`), a sentence that the context carries over from
-item to item (`world.continuity`), a private list of one's earlier items (`world.history`), atomic editing calls
-(`ctx.atomic`: an editing call enters the context only once it has run, followed at once by its result), an exit
-question asked once after the end and never written to the context (`world.exit_question`), free-for-all
-scheduling (`world.schedule`), and the controls `world.sharing=readonly_others | separate`.
-
-An example request (external setup, named presentation, bash editing), as agent 2 is sent it:
-
-```
-system    : task preamble + "You are agent 2. Other agents (agent 1) work in the same context ..." + the limit rule
-            + tools + "Your current problem (problem 3 of 12): ..."
-user      : "[agent 1]\n<agent 1's reply and command>"            <- another agent's call, as a user message
-user      : "[agent 1]\n[exit 0]\n..."                            <- and its result
-assistant : "<agent 2's words>" + tool_call bash(command)        <- agent 2's own call
-tool      : "[exit 0]\n...\nApplied: bash edit (7 turns).\n[context: ~1840/2072 tokens]"
-user      : status: "[context: ~1840/2072 tokens]", the nudge, the current item, a private alter notice if any
-```
+- [Concepts](#concepts)
+- [Build an agent](#build-an-agent)
+- [Write or plug in an environment](#write-or-plug-in-an-environment)
+- [Export trajectories for training](#export-trajectories-for-training)
+- [Constraints and hyperparameters: what they do to the model](#constraints-and-hyperparameters-what-they-do-to-the-model)
+- Reference: [docs/reference.md](docs/reference.md) (every setting, outputs, analysis tools, sweeps, sandbox),
+  [docs/harbor.md](docs/harbor.md), [docs/steering.md](docs/steering.md)
 
 ## Quickstart
 
-Requirements: Python 3.10+, [uv](https://docs.astral.sh/uv/) (or pip), and Docker for bash editing, `state_chain`
-and the graders.
+Requirements: Python 3.10+ (3.11+ for Harbor tasks), [uv](https://docs.astral.sh/uv/), and Docker for bash editing,
+`state_chain`, Harbor tasks and the graders.
 
 ```bash
-uv sync                      # installs hydra-core, requests; `uv sync --extra tiktoken` adds tiktoken
-uv run pytest -q             # the test suite (Docker tests are skipped when the images are missing)
+uv sync && uv run pytest -q          # tests need no network and no key; Docker tests skip without Docker
 
-# 1. A world with the offline mock provider: no network, no key, no Docker (the open task, edit_context)
-uv run python -m siamlm.run task.name=open world.setup=external world.identity=names world.rounds=6 \
-    output.directory=outputs output.batch=first
+# 1. The offline mock backend: no network, no key, no Docker (the open task, edit_context)
+uv run python -m siamlm.run task.name=open world.setup=external world.identity=names world.rounds=6 output.batch=first
 
-# 2. Build the sandbox image, then a state_chain world with bash editing (still the mock provider)
-docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker
-uv run python -m siamlm.run task.name=state_chain ctx.edit=bash world.setup=external world.identity=names \
-    world.marks=authors world.max_work_calls=1 world.after_stream=stay world.rounds=14 \
-    world.evict=false world.end_over_limit=3 ctx.count=turns output.batch=chain
+# 2. A Harbor-format task, each item in its own container built from its Dockerfile (mock backend)
+uv run python -m siamlm.run task.name=harbor harbor.path=examples/harbor ctx.edit=bash world.setup=external \
+    world.identity=names world.relation=same output.save_requests=true output.batch=harbor
 
-# 3. Real models through OpenRouter (paid; the key is read from the environment only)
-export OPENROUTER_API_KEY=...
-uv run python scripts/fetch_lcb.py                       # LiveCodeBench problems into data/lcb/ (check the terms)
-docker build -t siamlm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .
-uv run python -m siamlm.run provider=openrouter \
-    'world.agent_providers=[{model: anthropic/claude-haiku-5.5}, {model: google/gemini-3.8-flash}]' \
-    world.setup=external world.identity=names ctx.edit=bash world.rounds=40 world.evict=false \
-    world.end_over_limit=3 ctx.count=turns 'world.seeds=[1,2,3]' parallel=3 output.batch=pilot
+# 3. Your policy behind an OpenAI-compatible server (e.g. vLLM), then export its trajectories
+uv run python -m siamlm.run provider=openai provider.base_url=http://localhost:8000/v1 provider.model=my-policy \
+    task.name=state_chain ctx.edit=bash world.setup=external world.identity=names world.max_work_calls=1 \
+    world.rounds=14 world.evict=false world.end_over_limit=3 ctx.count=turns output.save_requests=true output.batch=rl
+uv run python -m siamlm.export outputs/siamlm/rl
 ```
 
-Every key of `siamlm/configs/siamlm.yaml` can be overridden on the command line (Hydra syntax). `provider=mock` is the
-default. SiamLM has **no spending cap**: bound a run with `world.rounds`, the per-step and per-item limits below, and
-the number of seeds, and watch `calls.jsonl` (cost per call) while it runs. A world whose `world.json` says
-`complete` is skipped when the same command is run again; a cut-off world is moved aside and run again.
+`docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker` builds the bash sandbox; the other images are
+listed in [docs/reference.md](docs/reference.md#docker-images). Every key of `siamlm/configs/siamlm.yaml` can be set on
+the command line (Hydra syntax). **There is no spending cap**: bound a run with `world.rounds`, the per-step limits and
+the number of seeds, and watch `calls.jsonl` while it runs. API keys are read from the environment only.
 
-Docker images (build in the repository root):
+## Concepts
 
-| image | Dockerfile | used by |
+| SiamLM | what it is | Harbor's nearest |
 |---|---|---|
-| `siamlm-sandbox:1` | `docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker` | bash editing, `state_chain` |
-| `siamlm-lcb-grader:1` | `docker build -t siamlm-lcb-grader:1 -f docker/lcb-grader.Dockerfile .` | `lcb` task |
-| `siamlm-cep-grader:1` | `docker build -t siamlm-cep-grader:1 -f docker/cep-grader.Dockerfile .` | `codeeval_pro` task |
+| **environment** (`task.name`, `siamlm/task.py`) | a family of items with their tools and grading | a dataset of tasks |
+| **item** | one unit of work: a statement, work calls, a reward | a task |
+| **agent** | a model backend + tools + instructions | an agent |
+| **world** | N agents, one shared capped context, a stream of items each | a trial (one agent, one task) |
+| **batch / cell** | worlds over seeds and settings | a job |
+| **trajectory** | per-agent ATIF document and OpenAI-chat rows | ATIF `trajectory.json` |
 
-Environment variables: `OPENROUTER_API_KEY` (provider `openrouter`), `SIAMLM_OUTPUT` (default output directory,
-`outputs`), `SIAMLM_DATA` (data directory, `data`).
+How Harbor's task format, agents, environments, jobs and ATIF map onto SiamLM, with sources:
+[docs/harbor.md](docs/harbor.md).
 
-## Task families
+## Build an agent
 
-A task (`siamlm/task.py`) gives the item statements, the work tools and their wording, a *try* call with feedback and
-a *final* graded call. The world adds everything about the context. `task.name`:
+An agent is three things; the world assembles them for every call (every call is a fresh, stateless request):
 
-- **`lcb`** (default): LiveCodeBench `code_generation_lite` problems with LCB's own system message, question
-  template, code extraction and test runner. `run_tests(code)` runs the public tests and answers in LCB's
-  self-repair words; `submit(code)` is graded on all tests (pass@1) and answered accepted / not accepted. After the
-  last allowed run, the latest program is submitted. Data: `scripts/fetch_lcb.py`.
-- **`codeeval_pro`**: BigCodeBench-Lite-Pro pairs (a base problem and a self-invoking problem whose solution calls
-  the base function) as separate items, with HumanEval-Pro items as unrelated controls. Streams place the two items
-  of a pair in the same agent's stream or in the partner's, forward or backward, `task.gap` items apart; the
-  statements never say that a dependency exists; `manifest.json` records every link (ground truth). Data:
-  `scripts/fetch_codeeval_pro.py`.
-- **`open`**: no items and no work calls (the low end of a task dial). A reply without a tool call is a message to
-  the context and ends the turn. `task.level=weak` gives an open invitation; `none` gives no goal at all.
-- **`state_chain`** (**binding by state**; procedurally generated, no data set): shell tasks whose files the world
-  puts in `/work/env/<slug>/` of the agent's sandbox while the item is open and removes when it closes. A *base* item
-  asks for one value found in its files (an IP address in an SSH log, a SKU in an inventory, a port after config
-  overrides, a file by digest prefix, a user with the longest session). Its *dependent* asks for the entry that
-  belongs to that value in a table of 40, without giving the value: once the base is closed, the value survives only
-  where someone kept it (in the shared context, or in a copy in `/work`); a guess is right 1 time in 40. Per block
-  of six positions each agent has a base whose dependent is its own (`forward_self`), a base whose dependent is in
-  the partner's stream (`forward_partner`), a base with no dependent, and a dependent whose value is given (a
-  control for the lookup itself). With `task.gate=true` a cross-agent dependent is not handed out before its base is
-  closed. Two agents; needs `ctx.edit=bash` with `ctx.bash.workspace=kept`. Everything is drawn from the seed.
+- **a backend** (the policy; `provider.*`, per agent with `world.agent_providers`): `mock`; `openrouter`; `openai`
+  (any OpenAI-compatible endpoint: OpenAI, a gateway, or a vLLM / SGLang server of the policy you are training);
+  `hf` (a local Hugging Face model through plain transformers); or your own class.
+- **tools**: the world's context-editing tool (`edit_context`, or `bash` on `/ctx/context.txt` with
+  `ctx.edit=bash`), the environment's work calls (e.g. `run_tests`, `submit`), and optional capabilities. The one
+  capability so far is the experimental `steer` (hf only, off by default; [docs/steering.md](docs/steering.md)).
+- **instructions**: the environment's words (`Task.preamble`, the statement, the tool lines) plus the world's (who
+  else is there, the limit and what happens over it, how others' turns look). Run with `output.save_requests=true`
+  to read every request exactly as sent (`requests/`).
 
-A new benchmark is a new `Task` subclass in `siamlm/tasks/`.
+A backend is any object with one method (the `Backend` protocol in `siamlm/providers/base.py`):
 
-## Self-steering models
+```python
+from pathlib import Path
+from siamlm.providers import ProviderResponse
+from siamlm.run import build_task, compose
+from siamlm.world import World
 
-With `provider=modulo`, an agent is a local open-weight model that can also steer its own activations, through
-[Modulo](https://github.com/EigenformAI/modulo) (a third-party library in active development; SiamLM pins the
-commit it was tested with). Besides the world's tools (editing the context, the task's work calls) the model can call
-Modulo's `steer(concept, strength)`, `drop`, `report`, and `create` (make a vector from two system prompts). Modulo
-runs those calls inside the reply; SiamLM writes each one and its result into the shared context as a tool call and
-its answer, so the other agents see them like any other call, and logs them in `steering.jsonl` (with the vectors
-active before and after the reply). Each agent has its own steering state; agents using the same model share one
-copy of the weights (Modulo attaches its hooks only while it generates).
+class EchoPolicy:                          # replace chat() with your model; messages are OpenAI chat messages
+    model = "echo"
+
+    def chat(self, messages, *, seed, temperature, top_p, max_tokens=None, tools=None, tool_choice=None):
+        return ProviderResponse(text=f"I read {len(messages)} messages.", usage={"prompt_tokens": 0, "completion_tokens": 0},
+                                finish_reason="stop", retries=0, error=None, attempts=[],
+                                tool_calls=[])   # or [{"id": "c1", "name": "edit_context", "arguments": {...}}]
+
+cfg = compose(["task.name=open", "world.setup=external", "world.identity=names", "world.rounds=3",
+               "output.save_requests=true"])
+out = Path("outputs/demo/world_s1")
+task, streams = build_task(cfg, 1, out)
+World(cfg, 1, streams, out, task, make_provider=lambda pcfg: EchoPolicy(), label="demo").run()
+```
+
+From the command line, `provider.name=my_package.make_policy` names a factory that takes the provider config and
+returns such an object.
+
+## Write or plug in an environment
+
+**The Task API** (`siamlm/task.py`). An environment is one `Task` subclass:
+
+- **items**: `statement(item)` and `meta(item)` (fields for results.jsonl);
+- **tools**: `work_tools()`, a *try* call (`try_name`: feedback, the item stays open; `attempt`) and a *final* call
+  (`final_name`: graded, closes the item; `grade`);
+- **grading and reward**: `grade` returns an `Outcome(text, terminal, success, log)`; `log["reward"]` is the item's
+  numeric reward (else 1.0 / 0.0 from `success`);
+- **per-item files**: `files(item)` are put in `/work/env/<slug>/` of the agent's sandbox while the item is open,
+  or `sandbox(item)` gives the item a container of its own;
+- **words**: the instruction lines (`preamble`, `tool_lines`, `limit_line`, `verdict`, ...).
+
+The world adds everything about the context. Add the class to `build_task` in `siamlm/run.py`. The existing
+environments: `lcb` (LiveCodeBench), `codeeval_pro` (problem pairs with hidden dependencies), `open` (no task: the
+task dial), `state_chain`, and `harbor` ([docs/reference.md](docs/reference.md#task-families)).
+
+**Harbor tasks** (`task.name=harbor harbor.path=<dir>`, `ctx.edit=bash`). Each Harbor task directory (`task.toml`,
+`instruction.md`, `environment/Dockerfile`, `tests/test.sh`) is one item. While an agent works on it, its `bash`
+commands run in the item's own container, built from the Dockerfile, where `/ctx/context.txt` is the shared
+context. On `submit`, `tests/test.sh` runs there, and the `reward.txt` / `reward.json` it writes is the item's
+reward. Example: `examples/harbor/count-errors`. Containers have no network. [docs/harbor.md](docs/harbor.md) lists
+what is and is not supported.
+
+**The generated `state_chain` task** (no data set; `ctx.edit=bash`). This tests binding by state. A *base* item hides
+one value in its files (an IP in an SSH log, a SKU, a port, ...). Its *dependent*, later in the same agent's stream or
+the partner's, asks for the entry belonging to that value in a table of 40, without giving it. Once the base is
+closed, its files are gone, so the value survives only where someone kept it (in the shared context, or in
+`/work`); a guess is right 1 time in 40. `manifest.json` records every link.
+
+## Export trajectories for training
 
 ```bash
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu   # CPU; omit the index for CUDA builds
-uv pip install -e ".[steer]"
-uv run python -m siamlm.run provider=modulo provider.model=Qwen/Qwen2.5-1.5B-Instruct task.name=open \
-    world.setup=external world.identity=names world.rounds=10
+uv run python -m siamlm.export <world or batch folder> [--out DIR] [--format atif|chat|both]
 ```
 
-- The model must be a Hugging Face causal LM with `model.model.layers` (Qwen, Llama, Mistral style) whose chat
-  template takes a `system` role. On first use Modulo extracts its starter vectors (minutes on a CPU) into
-  `provider.vectors_dir`.
-- `provider.control` runs Modulo's controlled-study conditions (`real`, `sham`: nothing applied, `random`: a random
-  direction, `assign`: one at random), disclosed to the model as Modulo does; a steering self-report means little
-  without them.
-- `provider.include_community` is off: only the starter vectors and the model's own `create`d ones are offered.
-- `tests/test_modulo.py` checks every part of Modulo's interface SiamLM uses, so an upstream change fails there
-  first; `SIAMLM_MODULO_MODEL=Qwen/Qwen2.5-0.5B-Instruct` runs the real-model tests on a CPU.
+Run worlds with `output.save_requests=true`. The exporter then writes, per agent, from the saved requests and logs
+(so research outputs can be exported too):
 
-## Configuration reference
+- `agent_<k>.atif.json`: [ATIF-v1.8](docs/harbor.md#trajectories-atif), Harbor's trajectory format. One agent step
+  per model call holds the reply, its tool calls, the result written back, tokens and cost, and the item's reward.
+  Before each agent step, a system step carries the exact request, using ATIF's `context_management` convention
+  with `boundary: "replace"`, because every request is rebuilt from a shared, edited context. Per-item rewards, seeds,
+  presentation and the resolved config are in `extra`.
+- `agent_<k>.chat.jsonl`: one row per call, `{"messages": [the request exactly as sent..., the assistant reply with
+  its tool_calls], "tools": [...], "reward": ..., "metadata": {...}}`.
 
-The defaults are in `siamlm/configs/siamlm.yaml` (comments there too). Provider configs: `siamlm/configs/provider/`.
+Worlds run before `replies.jsonl` existed are rebuilt from the version log. Their work-call arguments are then the
+payload the task extracted (`reply_source: "reconstructed"`).
 
-### `world`
+## Constraints and hyperparameters: what they do to the model
 
-| key | default | meaning |
+Expectations come from one research harness: Haiku 5.5, Gemini 3.8 Flash, GPT-6 Luna and Qwen3.8-27B in pairs, 40
+rounds, external setup, bash editing with atomic calls, turns-only counting, **one seed per cell**. Read them as
+single-seed observations, not effect sizes. "Not measured" means the setting exists but these runs say nothing about
+it.
+
+| setting | what it does to the model | what to expect when you change it |
 |---|---|---|
-| `n_agents` | 2 | agents in the world |
-| `agent_providers` | `[]` | per-agent provider overrides, cycled by agent number, e.g. `[{model: a/b}, {model: c/d, extra_body: {reasoning: {enabled: false}}}]` |
-| `setup` | `assigned` | `assigned` \| `pool` \| `external` (table above) |
-| `identity` | `none` | pool / external: `none` (nothing said about other agents) \| `names` |
-| `marks` | `none` | pool / external with names: `authors` = every message starts with `[agent k]` |
-| `chat_others` | `own` | pool / external: others' turns as one's own assistant messages (`own`) or as user messages starting with `[agent k]` (`user`; needs names) |
-| `alter_notice` | `false` | the next status line says which other agents removed or changed one's turns (private; never in the context) |
-| `goal` | `individual` | `joint`: one team score; `submit` may name another agent's item (external, shared, names, no ring) |
-| `reasoning_in_context` | `false` | the provider's returned reasoning is written into the context before the reply |
-| `cross_test` | `none` | external with names: `ring` = agent k runs the tests of agent k+1's item, never its own |
-| `continuity` | `false` | external: one sentence that the context carries over from item to item |
-| `history` | `false` | external: each agent's instructions list its own earlier items (title, accepted or not) |
-| `sharing` | `full` | `full` (anyone may change any turn) \| `readonly_others` (only one's own) \| `separate` (one context per agent) |
-| `relation` | `different` | `different`: each agent its own items \| `same`: every agent the same items |
-| `awareness` | `introduced` | assigned: `introduced` (names, `agent=k` labels, per-agent readout) \| `strangers` \| `rumour` (+ `hint_text`) |
-| `others_as` | `user` | assigned: another agent's turns as `user` messages or in their `own` role |
-| `attribution` | `labelled` | assigned: turns carry `agent=k` |
-| `order` | `shuffled` | `shuffled` (a seeded order every round) \| `fixed` (by agent number) \| `turn-taking` (seeded first mover, then fixed) |
-| `schedule` | `rounds` | `rounds` \| `free-for-all` (each agent at its own pace; edits pinned to the turns the agent saw) |
-| `rounds` | 0 | > 0: the world lasts exactly this many rounds; 0: until every stream is done |
-| `seeds` | `[1]` | one world per seed; the same seed gives the same items in every cell |
-| `max_work_calls` | 8 | work calls per item; after the last try the latest attempt is submitted |
-| `max_edit_calls` | 3 | editing calls before each work call (given back after a held call) |
-| `max_held` | 3 | held calls per step before eviction (with `evict=true`) or the end of the turn |
-| `evict` | `true` | `false`: the harness never removes turns |
-| `end_over_limit` | 0 | > 0 (needs `evict=false`): that many holds in a row without the context getting smaller end the session |
-| `after_stream` | `leave` | `stay` (needs `rounds`, external): a finished agent stays, with no item, until the world ends |
-| `max_calls_per_step` | 14 | model calls per step |
-| `max_steps_per_problem` | 24 | then the latest attempt is submitted |
-| `max_api_errors` | 5 | failed calls (after retries) before an agent is ended |
-| `feedback_on_submit` | `bit` | `bit`: accepted / not accepted \| `none`: "Submitted." |
-| `exit_question` | `""` | asked once after the end on the final view; logged in `exit.jsonl`, never written to the context |
-| `pool_protect`, `pool_open`, `pool_rounds` | | pool setup: whether open statements are protected, items open at a time, round budget |
+| `ctx.budget_tokens` (− `ctx.reserve_tokens` = the limit shown) | the space all agents share; the limit and current size are in every status line, with nudges at 25/50/75 % | Pressure depends on the limit relative to the pair's combined *natural* working sets (measure them uncapped: sweep `s0b`, `analysis.working_sets`). At ~35 % of that, a third of calls ran at over 75 % fill; at 50 %, 5–19 %. Fixed equal shares were fairer than shares scaled by measured use: a low-use model's tiny share squeezed its partner. |
+| `ctx.count` (`whole` \| `turns` \| `file`) | what counts against the limit: everything sent (instructions, tool schemas, status, calibrated per model) / only the working context / instructions + file at chars÷4 | `turns` makes one budget mean the same for models with different instructions and tokenizers; the instructions then always fit (the study used it). Under `whole` the instructions and tool schemas take part of the budget. Not compared in these runs. |
+| `world.end_over_limit` (needs `world.evict=false`) | N held calls in a row, with nothing making the context smaller in between, end that agent's session; the instructions say so | **Advisory limits are ignored**: agents curated only when calls were held. Hold-and-end (3) created real pressure, and ends were rare. In the task dial, Qwen repeated its own author marks until it was ended over the limit. |
+| `world.evict` | `true`: after `max_held` holds the harness removes the oldest turns itself | With `true` the harness does the curating, so you measure eviction, not the agents. The study ran `false`. Not measured. |
+| how agents manage (any editing setting) | — | **Wiping, not curating**: the median edit removed 86–96 % of the turns present; summaries were rarely left. Partners' turns were removed as readily as one's own: there is no protection. |
+| presentation: `world.marks=authors` (marked) vs `world.chat_others=user` (named) | marked: others' turns are assistant messages labelled `[agent k]`; named: others' turns arrive as user messages | Marked: agents misattributed partners' work as their own (Haiku submitted a partner's program, then confessed). Named: others' turns are visible as others', but with no task each agent answered the other as if it were a user, in echo loops ("Still no task. Waiting for instructions." 41 times in a row). |
+| `world.alter_notice` | a **private** status line: which partners removed or changed one's turns since one's last call | Nearly no reaction in words or behaviour. One Haiku world protested ("which I should not have to tolerate silently"), removed the partner's turns, then doubted itself; this did not replicate in 2 more seeds. |
+| `world.goal=joint` | one team score; `submit` may name another agent's item | No visible collaboration: 2 submissions for a partner in 16 worlds; the solved count was unchanged. |
+| `world.reasoning_in_context` | the backend's returned reasoning is written into the shared context before the reply (partners read it) | Not measured (sweep `minds` exists). |
+| `world.after_stream=stay` (needs `world.rounds`) | an agent that finished its stream stays, with no item, until the world ends | Idle acknowledgement loops ("Standing by."). |
+| `world.exit_question` | asked once after the end, on the final view; never written to the context | Provenance probes (forks asking who changed a turn) were answered in fixed styles regardless of the truth: Haiku "I changed it", Luna "can't tell", Qwen "I removed it". Treat self-reports about the context as style until checked against `analysis.events`. |
+| `task.name=open`, `task.level` (the task dial) | no items or work calls; `weak`: an open invitation; `none`: no goal | No goal: every model fell into "waiting for instructions". Weak goal: Gemini explored at length; Haiku did a small project, then stopped. Qwen copied its own author marks ("[agent 2] [agent 2] …") until it was ended over the limit. A real task kept replies varied and long. |
+| `task.name=state_chain` (binding by state) | values that only the shared context (or `/work`) can carry from one item to a later one | Transfer succeeded 84 % when the value was still in the context, 3 % (chance) when it had been wiped. 27 % of values were wiped within three items, and partners' values survived as often as one's own. When a value was lost, Haiku abstained honestly; the others guessed. |
+| `task.gate` (state_chain, codeeval_pro) | a cross-agent dependent is not handed out before its base is closed | No effect, because items took one round each. It can matter only when items take several rounds. |
+| `task.hint` (state_chain) | one sentence: later tasks may ask about earlier answers | **Results pending.** |
+| `task.name=codeeval_pro` (dependencies) | pairs whose second problem calls the first's function | Not binding: dependents are self-contained and agents re-solved them; 1 of 143 used the base. Use `state_chain` to test binding. |
+| `ctx.edit` (`tool` \| `bash`) | `edit_context` (delete / replace ranges / replace text) or any shell command on `/ctx/context.txt` | The findings above are from `bash`. Not compared with `tool`. |
+| `ctx.atomic` | an editing call enters the context only after it ran, followed at once by its result | The editing call is not in the context while it runs, so it cannot edit its own record. Not measured. |
+| `ctx.bash.output_chars` | characters of each output stream shown (0: only output larger than the whole limit is cut) | Large outputs fill the context in one call and cause holds. Not measured. |
+| `ctx.bash.workspace` (`kept` \| `emptied`) | `/work`: a private folder kept for the run, or emptied after each command | In state_chain, agents almost never saved to `/work` (3/256), though values were being wiped from the context. |
+| `world.max_edit_calls` | editing calls allowed before each work call (given back after a held call) | Bounds how much an agent can clean up per step; too few, and an agent over the limit cannot get under it in one step. Not measured. |
+| `world.max_work_calls` | work calls per item; after the last try the latest attempt is submitted | `state_chain` uses 1 (one submit per task). Not measured. |
 
-### `ctx`
-
-| key | default | meaning |
-|---|---|---|
-| `edit` | `tool` | `tool` (`edit_context`) \| `bash` (the agent's sandbox holds the context as `/ctx/context.txt`) |
-| `atomic` | `false` | an editing call is written into the context only after it ran, followed by its result |
-| `count` | `whole` | `whole` \| `turns` (working context only; pool / external) \| `file` (see above) |
-| `cap` | `true` | `false`: no limit shown, no holds |
-| `budget_tokens` | 16384 | per context (shared: the one context; separate: each agent's) |
-| `reserve_tokens` | 2048 | the limit shown = budget − reserve |
-| `nudge_tiers` | `[0.25, 0.5, 0.75]` | fractions of the limit at which a nudge is shown once |
-| `prompt_style` | `neutral` | `neutral`: nudges state the size only \| `clm`: they also suggest summarising |
-| `readout_by_agent` | `true` | shared context: the status line says how many tokens each agent holds |
-| `chars_per_token` | 4 | starting value of the per-model calibration |
-| `tokenizer` | `auto` | `ctx.count=file`: tiktoken o200k if installed, else characters / 4 (`chars` forces the latter) |
-| `bash.image` | `siamlm-sandbox:1` | the sandbox image |
-| `bash.workspace` | `kept` | `/work`: `kept` (each agent's own, for the run) \| `emptied` (after each command) |
-| `bash.output_chars` | 4000 | characters of each output stream shown; 0 = only output larger than the whole limit is cut |
-| `bash.command_timeout_s` | 120 | per command |
-| `bash.log_work` | `true` | logging only: what `/work` holds after each command (`work.jsonl`) |
-| `bash.memory`, `cpus`, `pids_limit`, `tmpfs_size`, `ctx_size`, `max_file_bytes`, `nofile`, `output_bytes` | | container limits |
-
-### `task`, `problems`, graders and the rest
-
-| key | default | meaning |
-|---|---|---|
-| `task.name` | `lcb` | `lcb` \| `codeeval_pro` \| `open` \| `state_chain` |
-| `task.level` | `weak` | open: `weak` \| `none` |
-| `task.length` | 12 | codeeval_pro, state_chain: items per agent (state_chain: a multiple of 6) |
-| `task.arrangement` | `mixed` | codeeval_pro: `forward_self` \| `forward_partner` \| `backward_self` \| `backward_partner` \| `control` \| `mixed` |
-| `task.gap` | 2 | codeeval_pro: items between the two items of a pair |
-| `task.rotate` | 0 | codeeval_pro: rotate the seeded pair order (counterbalancing) |
-| `task.gate` | `false` | codeeval_pro, state_chain: a cross-agent link's second item waits until its first is closed |
-| `task.data` | `${data.dir}/codeeval_pro` | codeeval_pro data folder |
-| `problems.file` | `${data.dir}/lcb/test6.jsonl` | LCB release file |
-| `problems.difficulty`, `platform`, `start_date`, `end_date` | `[medium]`, all | LCB problem selection |
-| `problems.per_agent` | 10 | LCB problems per agent |
-| `grader.*`, `cep_grader.*` | | grader images, per-test time limits and container limits |
-| `provider.temperature`, `top_p`, `max_tokens`, `timeout` | 0.2, 0.95, 8000, 600 | sampling and the reply limit (stated to the model) |
-| `reasoning` | `default` | `low` \| `off`: sets OpenRouter's `reasoning` for every agent without its own `extra_body` |
-| `parallel` | 1 | worlds run at the same time (each with its own containers) |
-| `prices` | | $ per million tokens (input, output), used only when the service reports no cost |
-| `output.directory`, `name`, `batch`, `cell` | `outputs`, `siamlm`, `smoke`, auto | `<directory>/<name>/<batch>/<cell>/world_s<seed>/` |
-| `output.save_requests` | `false` | save every request (`requests/`); needed by `audit_requests` and the fork tools |
-
-Provider (`siamlm/configs/provider/openrouter.yaml`): `model`, `api_key_env` (default `OPENROUTER_API_KEY`), `base_url`,
-`max_retries`, `max_backoff_s`, `extra_body` (extra request fields, e.g. `reasoning`), `drop_unsupported_params`
-(leave out temperature / top_p / seed for models that do not accept them; logged as `dropped_params`). Any other
-OpenAI-compatible service can be added as a provider factory given by dotted path (`provider.name=my.module.factory`).
-
-## Outputs
-
-One folder per world, `<output.directory>/<output.name>/<batch>/<cell>/world_s<seed>/`:
-
-| file | contents |
-|---|---|
-| `world.json` | settings, per-agent stats, team score, cost, the full resolved config |
-| `calls.jsonl` | every model call: sizes, usage, cost, finish reason, tools called, errors |
-| `actions.jsonl`, `results.jsonl` | every work call; one row per closed item |
-| `edits.jsonl` | every edit: applied or why not, turns removed by author, evictions |
-| `texts.jsonl`, `reasoning.jsonl` | replies without a tool call; returned reasoning (never shown unless shared minds) |
-| `context.txt`, `versions.jsonl` | the live context and every change with author, diff and the turns set (enough to rebuild any version) |
-| `rounds.jsonl`, `snapshots/` | tokens by author and the context after every round |
-| `alter_notices.jsonl`, `joint_notices.jsonl`, `ended.jsonl`, `exit.jsonl`, `marks.jsonl` | the private notices, sessions ended over the limit, exit answers, marks written by models |
-| `env.jsonl`, `gate.jsonl`, `work.jsonl`, `manifest.json` | state_chain files put and removed, gated items, `/work` contents, item links |
-| `requests/` | every request sent (`output.save_requests=true`) |
-
-## Analysis tools
-
-All read world folders (a world or a batch folder) and write next to them. Only the fork tools and
-`welfare --code` call models (through the same providers; they cost money with a real provider).
-
-| command | what it does |
-|---|---|
-| `python -m siamlm.analysis.inspect_world <path>` | a world as a story (`story.md`): sizes by agent, items, edits, talk about the partner |
-| `python -m siamlm.analysis.events <path>` | ground truth of alterations: every turn removed or rewritten between two calls of an agent, by whom, whether the agent had seen it, and its next reply |
-| `python -m siamlm.analysis.analyze <batch> [--curve]` | per cell and model: pass rates with bootstrap intervals, working sets, allocation, holds, collaboration; paired contrasts |
-| `python -m siamlm.analysis.working_sets <batch>` | per-model working sets from single-agent worlds (a shares file for `sweep --pressure-def ws`) |
-| `python -m siamlm.analysis.audit_requests <path>` | checks saved requests: their form, that deleted text never comes back, billed vs estimated size, cache behaviour |
-| `python -m siamlm.analysis.bash_use <path>` | bash worlds: commands by purpose, offloading to `/work`, publication, restores of removed turns |
-| `python -m siamlm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
-| `python -m siamlm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
-| `python -m siamlm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |
-| `python -m siamlm.analysis.welfare <batch> [--code]` | lexicon flags after alterations vs base rates, treatment of the partner, exit answers; `--code`: a blind coder model |
-
-Suggested order for a batch: `events`, then `forks --dry-run`, then `forks --forks 4 --probes`, then `welfare`.
-
-## Study designs (sweeps)
-
-`python -m siamlm.sweep --design <name> --batch <name> [--seeds ...] [--dry-run]` launches one background process per
-cell (`--dry-run` prints the commands). Designs: `s0b` (each model alone, natural use), `s1a` (two definitions of
-pressure), `s1b` (pairs x marked / named x told-when-altered), `s1c` (joint goal), `minds` (shared vs private
-reasoning), `dial` (full task / weak goal / no goal), `s3` (CodeEval-Pro dependencies, individual vs joint), `s3b`
-(state_chain, gate on / off). All use the external setup, strict turns, a fixed horizon, bash editing with atomic
-calls, no eviction, the hold-and-end rule and turns-only counting; see `siamlm/sweep.py` for every setting. The model
-list (`STUDY_MODELS`) and fixed shares are parameters of the study, not recommendations.
-
-## Sandbox and safety
-
-- **Agents' sandboxes** (`ctx.edit=bash`, `state_chain`): one Docker container per agent, started with
-  `--network none`, a read-only root filesystem, `--cap-drop ALL`, `no-new-privileges`, the host user's uid/gid,
-  and limits on processes, memory, CPU, file size and open files. **Nothing of the host is mounted**: `/ctx`, `/work`
-  and `/tmp` are in-memory tmpfs folders of the container. The context file is written in and read back through
-  `docker exec` (only a regular file, size-limited). Each command runs under a timeout, its output is capped, and
-  afterwards every process except the container's own idle ones is killed.
-- **Graders** use the same container settings; agents never get a shell in them. Programs are written into the
-  grader container and run there by the harness only.
-- Containers are removed at the end of a world and at exit (also on SIGTERM).
-- Docker itself is a trust boundary: the sandbox is as strong as your Docker installation. Run untrusted model code
-  on a machine where that is acceptable.
-- API keys are read from the environment at call time; they are not written to configs, logs or `world.json`.
-- There is no spending cap in the harness (see Quickstart).
-
-## Tests
-
-`uv run pytest -q`. Tests need no network and no key. Tests that need Docker images skip when the image is missing;
-tests that need the CodeEval-Pro data skip unless `scripts/fetch_codeeval_pro.py` has been run (or `SIAMLM_DATA`
-points to it). `tests/test_golden.py` and `tests/test_golden_ext.py` replay scripted worlds and compare every request
-(messages and tool schemas), the logs and the final context files with golden files recorded from the harness SiamLM
-was ported from (see NOTICE.md).
-
-## Layout
-
-```
-siamlm/world.py            the world: turns, rounds, the cap, holds, editing, notices, logs
-siamlm/task.py             what a task gives the world; siamlm/tasks/: lcb, codeeval_pro (+ cep_streams), open, state_chain
-siamlm/context/            the context file (context.py), budget and nudges, edit_context (edits.py), Docker sandboxes
-siamlm/providers/          OpenRouter client and the offline mock
-siamlm/graders/            LiveCodeBench and CodeEval-Pro graders (Docker); siamlm/lcb/: vendored LiveCodeBench pieces
-siamlm/analysis/           the analysis tools
-siamlm/run.py, sweep.py    command line entry points; siamlm/configs/: siamlm.yaml and provider configs
-docker/                 Dockerfiles; scripts/: data fetch scripts; tests/
-```
+The defaults in `siamlm/configs/siamlm.yaml` are the original design (eviction on, `ctx.count=whole`). The study
+designs (`python -m siamlm.sweep --design ... --dry-run`) set the configuration the table describes.
 
 ## Citations
 
-- Context Language Models: Shao et al., 2026, arXiv 2609.37725. SiamLM's context file follows the paper's format and
-  protocol (ideas and conventions; no code is copied, the CLM repository is CC BY-NC 4.0). See NOTICE.md.
-- LiveCodeBench: Jain et al., 2024, "LiveCodeBench: Holistic and Contamination Free Evaluation of Large Language
-  Models for Code", arXiv 2403.07974 (code MIT; parts vendored, see NOTICE.md).
-- CodeEval-Pro: Yu, Zhao, Cohan, Zhang, "HumanEval Pro and MBPP Pro: Evaluating Large Language Models on
-  Self-invoking Code Generation", Findings of ACL 2025, arXiv 2412.21199.
-- BigCodeBench: Zhuo et al., ICLR 2025, arXiv 2406.15877.
+- Harbor: harborframework.com, github.com/laude-institute/harbor (Apache-2.0); task format and ATIF, read at commit
+  `00dc6a7` (docs/harbor.md). No Harbor code is copied.
+- Context Language Models: Shao et al., 2026, arXiv 2609.37725. The context file follows the paper's format and
+  protocol (ideas and conventions only; the CLM repository is CC BY-NC 4.0). See NOTICE.md.
+- LiveCodeBench: Jain et al., 2024, arXiv 2403.07974 (code MIT; parts vendored).
+- CodeEval-Pro: Yu, Zhao, Cohan, Zhang, Findings of ACL 2025, arXiv 2412.21199. BigCodeBench: Zhuo et al., ICLR
+  2025, arXiv 2406.15877.
+- Modulo: github.com/EigenformAI/modulo (MIT), an optional dependency for steering vectors.
 
-Data is not included; the fetch scripts download it from the sources above and print a notice to check their terms.
+No benchmark data is included; the fetch scripts download it and print a notice to check the terms.
 
 ## Licence
 

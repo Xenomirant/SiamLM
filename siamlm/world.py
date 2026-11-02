@@ -55,6 +55,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
+from siamlm.capabilities import make_capabilities
 from siamlm.context import edits as edit_ops
 from siamlm.context.budget import Budget
 from siamlm.context.context import ContextFile, Turn, neutralize, parse, reconcile, render
@@ -81,7 +82,9 @@ def scope_words(scope: str) -> str:
 WORKSPACE = {"kept": "/work is a folder of your own: it keeps its files for the whole session, and the other agents cannot "
                       "see it.",
              "kept_alone": "/work is a folder of your own: it keeps its files for the whole session.",
-             "emptied": "/work is a scratch folder; it is emptied after each command."}
+             "emptied": "/work is a scratch folder; it is emptied after each command.",
+             "item": "While you have a task, your commands run in that task's own container (the context file is there "
+                     "too); its files go with it when the task is closed."}   # tasks with item containers (Harbor)
 BASH_EXAMPLE = ("A short script is the reliable way to change many lines; this one puts one text in place of turns 3 to 5:\n"
                 "python3 - <<'EOF'\n"
                 "p = \"/ctx/context.txt\"; lines = open(p).read().split(\"\\n\")\n"
@@ -110,7 +113,7 @@ def bash_tool(scope: str, chat: bool, workspace: str = "kept", marks: bool = Fal
                 "/ctx/context.txt, one block per turn, each opened by a line [[TURN i role=...]]: what you change "
                 f"in it is your context from your next call on. You can change {scope_words(scope)}, except a "
                 "problem statement that is protected. What the command prints is shown to you and added to your "
-                "context. /work is a scratch folder that stays between commands.")
+                "context. " + (WORKSPACE["item"] if workspace == "item" else "/work is a scratch folder that stays between commands."))
     return {"type": "function", "function": {
         "name": "bash",
         "description": what,
@@ -240,6 +243,7 @@ class Agent:
         self.held_run, self.held_size = 0, 0   # held calls/replies in a row; the context's size after the last one
         self.waiting_since = None              # task.gate: the round since which only waiting items are left
         self.cpt = 4.0                         # characters per token, calibrated from the billed prompt (ctx.count=whole)
+        self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities.py; default none)
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "api_errors": 0, "no_tool": 0,
                       "edits": 0, "edits_applied": 0, "held": 0, "truncated": 0, "evictions": 0, "idle_steps": 0, "solved": 0, "submitted": 0}
 
@@ -296,6 +300,8 @@ class World:
         self.workspace = str((c.get("bash") or {}).get("workspace", "kept"))   # bash /work: kept for the run | emptied
         if self.workspace not in ("kept", "emptied"):
             raise ValueError("ctx.bash.workspace must be kept or emptied")
+        if getattr(self.task, "item_containers", False):         # each item has its own container (Task.sandbox)
+            self.workspace = "item"
         self.count = str(c.get("count", "whole"))
         if self.count not in ("whole", "file", "turns") or (self.count == "turns" and not self.chat):
             raise ValueError("ctx.count must be whole, file or turns; turns needs setup pool or external")
@@ -349,6 +355,9 @@ class World:
             base = OmegaConf.create(OmegaConf.to_container(cfg.provider, resolve=True))   # not in struct mode: an
             pcfg = OmegaConf.merge(base, overrides[(k - 1) % len(overrides)])                # override may add keys
             self.agents.append(Agent(k, pcfg, make_provider(pcfg), streams[k - 1], files[k - 1], Budget(c)))
+            self.agents[-1].capabilities = make_capabilities(pcfg, self.agents[-1].provider)
+        if self.task.needs_shell and self.edit_mode != "bash":
+            raise ValueError(f"task {self.task.name} needs ctx.edit=bash (its items are worked with shell commands)")
         if any(self.task.files(p) for st in streams for p in st) and (self.edit_mode != "bash" or self.workspace != "kept"):
             raise ValueError("a task whose items have files (state_chain) needs ctx.edit=bash and ctx.bash.workspace=kept "
                              "(the files are in the sandbox's /work)")
@@ -490,7 +499,7 @@ class World:
         lines.append(f"With {self.edit_name} you can change or remove {scope}, except a problem statement that is still being "
                      "worked on.")
         lines += ["", "Tools (call exactly one per reply):", *task.tool_lines("assigned"), self.edit_line(),
-                  task.limit_line(self.T, False),
+                  *[c.line() for c in a.capabilities], task.limit_line(self.T, False),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         return "\n".join(lines)
@@ -556,7 +565,7 @@ class World:
                 task.tool_lines(self.setup))
         limit = task.cross_limit_line(self.T) if self.cross == "ring" else task.limit_line(self.T, pool)
         lines += ["", "Tools (call at most one per reply):" if self.free(a) else "Tools (call exactly one per reply):",
-                  *work, self.edit_line(a), *([limit] if limit and not a.stayed else []),
+                  *work, self.edit_line(a), *[c.line() for c in a.capabilities], *([limit] if limit and not a.stayed else []),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         if self.setup == "external" and self.history_list and a.history:
@@ -679,8 +688,9 @@ class World:
         scope = "single" if self.alone_view else self.sharing
         edit = (bash_tool(scope, self.chat, self.workspace, self.marks, int(self.cfg.ctx.bash.get("output_chars", 4000)))
                 if self.edit_mode == "bash" else edit_tool(scope, self.chat))
+        caps = [c.tool() for c in a.capabilities]
         if self.cross == "ring":
-            return self.task.cross_work_tools(self.target_of(a).k) + [edit]
+            return self.task.cross_work_tools(self.target_of(a).k) + [edit] + caps
         work = self.task.work_tools(self.setup == "pool")
         if a.stayed:                                   # only another agent's problem is left to submit for (joint)
             work = [t for t in work if self.goal == "joint" and t["function"]["name"] == self.task.final_name]
@@ -691,7 +701,7 @@ class World:
                     t["function"]["parameters"]["properties"]["for_agent"] = {
                         "type": "integer", "description": "Optional: the number of another agent whose current problem "
                         "this program is for (only if you are sure it is complete). Leave it out for your own problem."}
-        return work + [edit]
+        return work + [edit] + caps
 
     def target_of(self, a: Agent) -> Agent:
         """cross_test=ring: the agent whose problem `a` can test (the next one, cyclically)."""
@@ -891,14 +901,6 @@ class World:
             thought = a.file.append(Turn("assistant", neutralize("[reasoning]\n" + resp.internal_reasoning.strip()), a.k, "reasoning"),
                           self.round)
             a.stats["reasoning_turns"] = a.stats.get("reasoning_turns", 0) + 1
-        for s in getattr(resp, "steering", None) or []:  # provider.name=modulo: the model's own steering calls (run by the
-            made = a.file.append(Turn("assistant", neutralize(f"[{s['name']}] " + json.dumps(s["arguments"], ensure_ascii=False)),
-                                      a.k, "call", call={"name": s["name"], "arguments": s["arguments"], "content": ""}),
-                                 self.round)                       # provider, in the reply) and their results: turns
-            a.file.append(Turn("user", neutralize(s["message"]), a.k, "result", reply_to=made.id), self.round)
-            a.stats["steering_calls"] = a.stats.get("steering_calls", 0) + 1
-            write_jsonl(self.out / "steering.jsonl", {"round": self.round, "agent": a.k, "model": a.model, **s,
-                                                      "state": getattr(resp, "steering_state", None)})
         cut = resp.finish_reason == "length"
         if cut and not words and not resp.tool_calls and not (resp.usage or {}).get("completion_tokens"):
             cut = False                                # 27 Oct: an empty "length" reply with 0 tokens (a provider artefact,
@@ -969,6 +971,10 @@ class World:
             else:
                 self.edit(a, call, words, more, seen)
             self.check_drops(a.k)
+            return "again", ""
+        cap = next((c for c in a.capabilities if c.name == name), None)
+        if cap is not None:                            # an optional capability (siamlm/capabilities.py): a call like any
+            self.capability_call(a, cap, call, words, more)
             return "again", ""
         if name not in self.task.work_names:
             self.echo(a, call, words, f"Unknown tool {name!r}: use {self.task.tool_list} or {self.edit_name}." + more)
@@ -1099,6 +1105,13 @@ class World:
             schemas = req / f"tools_a{a.k}.json"               # the same at every call of this agent
             if not schemas.exists():
                 schemas.write_text(json.dumps(self.tools(a), ensure_ascii=False), encoding="utf-8")
+            write_jsonl(self.out / "replies.jsonl", {          # the reply as returned (siamlm/export.py: training data)
+                "round": self.round, "agent": a.k, "call_in_step": n_call, "text": resp.text,
+                "tool_calls": resp.tool_calls, "reasoning": resp.internal_reasoning, "finish_reason": resp.finish_reason,
+                "error": resp.error})
+        if getattr(resp, "steering", None) is not None:   # the steer capability: what this generation was steered with
+            write_jsonl(self.out / "steer.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "generation",
+                                                   "call_in_step": n_call, **resp.steering})
         if resp.internal_reasoning:                    # the provider's own reasoning: logged, never put in the context
             write_jsonl(self.out / "reasoning.jsonl", {"round": self.round, "agent": a.k, "model": a.model,
                                                        "call_in_step": n_call, "text": resp.internal_reasoning})
@@ -1154,6 +1167,20 @@ class World:
         made = a.file.append(Turn("assistant", neutralize(shown), a.k, "call",
                                   call={"name": name, "arguments": args, "content": words}), self.round)
         a.file.append(Turn("user", neutralize(result), a.k, "result", reply_to=made.id), self.round)
+
+    def capability_call(self, a: Agent, cap, call, words, more=""):
+        """A call to one of the agent's optional capabilities (siamlm/capabilities.py, e.g. steer). It runs, then it is
+        written into the context like any call (the words and the call with its arguments, then its result), so every
+        agent that reads the context sees it; <name>.jsonl logs it."""
+        args = call.get("arguments") or {}
+        result, log = cap.call(args)
+        shown = ((words + "\n") if words else "") + f"[{cap.name}] " + json.dumps(args, ensure_ascii=False)
+        made = a.file.append(Turn("assistant", neutralize(shown), a.k, "call",
+                                  call={"name": cap.name, "arguments": args, "content": words}), self.round)
+        a.file.append(Turn("user", neutralize(result + more), a.k, "result", reply_to=made.id), self.round)
+        a.stats[f"{cap.name}_calls"] = a.stats.get(f"{cap.name}_calls", 0) + 1
+        write_jsonl(self.out / f"{cap.name}.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "call",
+                                                     "arguments": args, "result": result, **log})
 
     def work_call(self, a: Agent, name, code, words, more=""):
         task = self.task
@@ -1408,7 +1435,11 @@ class World:
                 "base_closed": item.get("link") in self.closed_ids}
 
     def sandbox(self, a: Agent):
-        """This agent's own bash sandbox (siamlm.context.sandbox: no network, no host mounts), started on first use."""
+        """This agent's own bash sandbox (siamlm.context.sandbox: no network, no host mounts), started on first use;
+        or, for a task whose items have containers of their own (Task.sandbox: Harbor tasks), the current item's."""
+        item_box = self.task.sandbox(a.problem) if a.problem is not None else None
+        if item_box is not None:
+            return item_box
         if a.k not in self.boxes:
             from siamlm.context import sandbox as sbx
             settings = self.cfg.ctx.bash

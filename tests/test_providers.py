@@ -55,3 +55,45 @@ def test_context_limit_is_not_retried(monkeypatch):
     p = OpenAICompatibleProvider("other", "a/b", "http://x", "SIAMLM_TEST_KEY", max_retries=3, drop_unsupported_params=False)
     r = p.chat([{"role": "user", "content": "q"}], seed=1, temperature=0.2, top_p=0.95, tools=[SUBMIT])
     assert r.error_kind == "context_limit" and len(sent) == 1 and sent[0]["tools"] == [SUBMIT]
+
+
+def test_an_openai_compatible_endpoint_without_a_key(monkeypatch):
+    """provider=openai (e.g. a vLLM server of a policy being trained): base_url from the config, no key needed (no
+    Authorization header then), tool calls parsed, nothing OpenRouter-specific in the request."""
+    import requests
+    from siamlm import run as runner
+    cfg = runner.compose(["provider=openai", "provider.base_url=http://localhost:9/v1"]).provider
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    sent = []
+
+    class Resp:
+        status_code, headers, text = 200, {}, ""
+
+        def json(self):
+            return {"id": "x", "model": "m", "usage": {"prompt_tokens": 5, "completion_tokens": 2}, "choices": [
+                {"finish_reason": "tool_calls", "message": {"content": "", "tool_calls": [
+                    {"id": "c1", "type": "function", "function": {"name": "submit", "arguments": "{\"answer\": \"4\"}"}}]}}]}
+    monkeypatch.setattr(requests, "post", lambda url, **k: sent.append((url, k)) or Resp())
+    p = make_provider(cfg)
+    r = p.chat([{"role": "user", "content": "hi"}], seed=1, temperature=1, top_p=1, tools=[SUBMIT])
+    url, k = sent[0]
+    assert url == "http://localhost:9/v1/chat/completions" and "Authorization" not in k["headers"]
+    assert "usage" not in k["json"] and "provider" not in k["json"]
+    assert r.error is None and r.tool_calls == [{"id": "c1", "name": "submit", "arguments": {"answer": "4"}}]
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    p.chat([{"role": "user", "content": "hi"}], seed=1, temperature=1, top_p=1)
+    assert sent[1][1]["headers"]["Authorization"] == "Bearer k"
+    with pytest.raises(ValueError, match="needs provider.base_url"):
+        make_provider(OmegaConf.create({"name": "openai", "model": "m"}))
+
+
+def test_hf_reply_parsing():
+    """provider=hf: Hermes-style <tool_call> blocks become tool calls, <think> becomes reasoning; a broken block stays."""
+    from siamlm.providers.hf import hf_messages, parse_reply
+    text, calls, reasoning = parse_reply('<think>hm</think>Let me look.\n<tool_call>\n{"name": "bash", "arguments": '
+                                         '{"command": "ls"}}\n</tool_call>\n<tool_call>{oops}</tool_call>')
+    assert reasoning == "hm" and calls == [{"id": "hf_0", "name": "bash", "arguments": {"command": "ls"}}]
+    assert text == "Let me look.\n\n<tool_call>{oops}</tool_call>"
+    out = hf_messages([{"role": "assistant", "content": None, "tool_calls": [
+        {"id": "t1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"ls\"}"}}]}])
+    assert out[0]["tool_calls"][0]["function"] == {"name": "bash", "arguments": {"command": "ls"}} and out[0]["content"] == ""

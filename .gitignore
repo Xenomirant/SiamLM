@@ -223,3 +223,6 @@ __marimo__/
 # benchmark data (fetched by scripts/fetch_*.py; not redistributed) and run outputs
 data/
 outputs/
+
+# example task files (examples/harbor/*/environment/ holds a log file the task needs)
+!examples/harbor/**/*.log

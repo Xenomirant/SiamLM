@@ -1,3 +1,3 @@
-from .base import MockProvider, OpenAICompatibleProvider, ProviderResponse, make_provider
+from .base import Backend, MockProvider, OpenAICompatibleProvider, ProviderResponse, make_provider
 
-__all__ = ["MockProvider", "OpenAICompatibleProvider", "ProviderResponse", "make_provider"]
+__all__ = ["Backend", "MockProvider", "OpenAICompatibleProvider", "ProviderResponse", "make_provider"]

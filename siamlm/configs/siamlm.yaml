@@ -1,5 +1,5 @@
 # SiamLM: N agents (any models) share ONE capped, self-edited context while each works on its own stream of task items
-# (LiveCodeBench problems by default). Provider configs: siamlm/configs/provider/ (mock | openrouter).
+# (LiveCodeBench problems by default). Provider configs: siamlm/configs/provider/ (mock | openrouter | openai | hf).
 # Any key can be overridden on the command line: python -m siamlm.run world.n_agents=3 ctx.edit=bash ...
 defaults:
   - provider: mock
@@ -153,7 +153,8 @@ prices:
 
 task:
   name: lcb                  # lcb | open (no problems: the task dial) | codeeval_pro (pairs with hidden dependencies) |
-                             # state_chain (generated shell tasks: binding by state; needs ctx.edit=bash)
+                             # state_chain (generated shell tasks: binding by state; needs ctx.edit=bash) |
+                             # harbor (Harbor-format task directories, harbor.path; needs ctx.edit=bash)
   level: weak                # open: weak (an open invitation) | none (no goal at all)
   arrangement: mixed         # codeeval_pro: forward_self | forward_partner | backward_self | backward_partner |
                              # control | mixed (siamlm/tasks/cep_streams.py); manifest.json in each world folder
@@ -165,6 +166,17 @@ task:
   gate: false                # codeeval_pro, state_chain: true = the second item of a cross-agent link is not handed
                              # out before the first is closed (the agent takes its next item meanwhile, or waits)
   data: ${data.dir}/codeeval_pro   # codeeval_pro: the folder scripts/fetch_codeeval_pro.py writes
+
+harbor:                      # task.name=harbor (siamlm/tasks/harbor.py, docs/harbor.md): each item is one Harbor task;
+                             # an agent's bash commands for it run in its own container, built from environment/Dockerfile
+  path: examples/harbor      # one task directory (with task.toml) or a folder of them
+  per_agent: 0               # items per agent; 0: all the tasks, split between the agents (world.relation=same: each all)
+  build: true                # docker build a task's image when it is missing (tagged by the hash of environment/)
+  solved_at: 1.0             # an item counts as solved when its reward (reward.txt, or reward.json's "reward") is >= this
+  memory: 2g                 # container limits, unless task.toml's [environment] memory_mb / cpus say otherwise
+  cpus: 1
+  pids_limit: 256
+  command_timeout_s: 120     # per bash command (the verifier uses [verifier].timeout_sec)
 
 cep_grader:                  # codeeval_pro: docker build -t siamlm-cep-grader:1 -f docker/cep-grader.Dockerfile .
   image: siamlm-cep-grader:1

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "siamlm"
 version = "0.1.0"
-description = "Siamese Language Models: several LLM agents sharing one capped, self-edited context"
+description = "Siamese Language Models: a harness for training and evaluating LLM agents that share one capped, self-edited context"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "NOTICE.md", "siamlm/lcb/LICENSE"]
@@ -14,8 +14,11 @@ dependencies = ["hydra-core>=1.3,<1.4", "requests>=2.31"]
 
 [project.optional-dependencies]
 tiktoken = ["tiktoken>=0.7"]   # only ctx.count=file uses it (o200k instead of characters / 4)
-# provider.name=modulo: local models that steer their own activations. Modulo is a third-party library in active
-# development; this pins the commit SiamLM was tested with (tests/test_modulo.py checks the interface it uses).
+# provider.name=hf: a local Hugging Face model through transformers (CPU: install torch from the CPU index first)
+hf = ["torch>=2.4", "transformers>=4.46,<5", "accelerate>=1.0"]
+# provider.steer (EXPERIMENTAL, with provider=hf): Modulo is used only for its vector registry and extraction. It is a
+# third-party library in active development; this pins the commit SiamLM was tested with (tests/test_steer.py checks
+# the parts of its interface SiamLM uses).
 steer = ["modulo @ git+https://github.com/EigenformAI/modulo@e481fbf22d58175409588a7f6402bd636675310b", "torch>=2.4", "transformers>=4.46,<5", "accelerate>=1.0"]
 dev = ["pytest>=8.0"]
 
@@ -25,6 +28,7 @@ dev = ["pytest>=8.0"]
 [project.scripts]
 siamlm-run = "siamlm.run:main"
 siamlm-sweep = "siamlm.sweep:main"
+siamlm-export = "siamlm.export:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["siamlm"]
