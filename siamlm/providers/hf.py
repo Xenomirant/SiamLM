@@ -6,7 +6,7 @@ own chat template, with the offered tools, and generated with `model.generate`; 
 real tokens; cost is 0. One copy of the weights per process and model, shared by the agents that use it; generation
 holds a lock per model, so one agent's steering hooks never touch another agent's generation.
 
-With `provider.steer.enabled=true` (EXPERIMENTAL, siamlm/steer.py) the backend keeps that agent's steering state and
+With `provider.steer.enabled=true` (EXPERIMENTAL, siamlm/capabilities/steer.py) the backend keeps that agent's steering state and
 attaches its hooks only around its own `generate` calls.
 """
 from __future__ import annotations
@@ -93,7 +93,7 @@ class HFProvider:
         self.steering = None
         steer = dict(steer or {})
         if steer.get("enabled", False):
-            from siamlm.steer import Steering, load_vectors
+            from siamlm.capabilities.steer import Steering, load_vectors
             with self.lock:
                 vectors = load_vectors(model, self.lm, self.tokenizer, steer)
             self.steering = Steering(vectors, self.residual_norm, steer)

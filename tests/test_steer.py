@@ -1,4 +1,4 @@
-"""The experimental `steer` capability (siamlm/steer.py, siamlm/capabilities.py; docs/steering.md).
+"""The experimental `steer` capability (siamlm/capabilities/steer.py; docs/steering.md).
 
 - Mock (no torch, no model): a backend with a steering state. The steer call and its result enter the shared context
   like any call (the partner sees them); only the steering agent has the tool and its instruction line; the call
@@ -19,7 +19,7 @@ from omegaconf import OmegaConf
 from helpers import Scripted, factory, read_jsonl, tool
 import siamlm.run as runner
 from siamlm.providers import ProviderResponse
-from siamlm.steer import Steering
+from siamlm.capabilities.steer import Steering
 from siamlm.tasks.open import OpenTask
 from siamlm.world import World
 
@@ -99,8 +99,8 @@ def test_a_steer_call_enters_the_context_and_steers_only_later_generations(tmp_p
     # only agent 1 has the tool and its instruction line
     names = lambda k: [t["function"]["name"] for t in json.loads((w / "requests" / f"tools_a{k}.json").read_text())]
     assert "steer" in names(1) and "steer" not in names(2)
-    assert "- steer(concept, strength)" in a1.seen[0][0]["content"] and "steer" not in a2.seen[0][0]["content"]
-    log = read_jsonl(w / "steer.jsonl")
+    assert "- steer(concept, strength" in a1.seen[0][0]["content"] and "steer" not in a2.seen[0][0]["content"]
+    log = read_jsonl(w / "steering.jsonl")
     calls = [r for r in log if r["event"] == "call"]
     assert [(r["agent"], r["arguments"], r["ok"]) for r in calls] == [(1, {"concept": "curiosity", "strength": 6}, True)]
     assert [r["applied"] for r in log if r["event"] == "generation"][:2] == [{}, {"curiosity": 6.0}]
@@ -196,7 +196,7 @@ def test_a_real_steer_call_steers_the_next_generation(tmp_path):
     task = OpenTask("weak")
     World(cfg, 1, task.streams(2), tmp_path / "w", task, make, label="t").run()
     w, real = tmp_path / "w", made["a1"].real
-    gens = [r for r in read_jsonl(w / "steer.jsonl") if r["event"] == "generation"]
+    gens = [r for r in read_jsonl(w / "steering.jsonl") if r["event"] == "generation"]
     assert gens[0]["agent"] == 1 and gens[0]["applied"] == {"curiosity": 10.0}     # the generation after the call
     assert all(not layer._forward_hooks for layer in real.lm.model.layers)          # no hook left
     # the same request, unsteered and greedy, gives a different reply: the vector really acted

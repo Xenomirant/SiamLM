@@ -49,6 +49,7 @@ class Turn:
     call: dict | None = None     # a turn made by a tool call: {name, arguments, content, result}; sent as a tool call
     reply_to: int | None = None  # a tool result turn: the id of its call turn
     origin: list = field(default_factory=list)   # summary/edited: [{id, agent, kind}] of the turns it replaced
+    pinned: int | None = None    # the pin capability: the agent that pinned this turn (shown as pinned=k in its header)
 
 
 def neutralize(text: str) -> str:
@@ -71,7 +72,8 @@ def header(n: int, turn: Turn, show_agents, viewer: int | None = None) -> str:
     """`show_agents`: an attribution (labelled | other | none), or a bool (True = labelled; older callers)."""
     attribution = show_agents if isinstance(show_agents, str) else ("labelled" if show_agents else "none")
     who = label(turn, attribution, viewer)
-    return f"{_OPEN}{n} role={turn.role}{f' agent={who}' if who else ''}]]"
+    pin = f" pinned={turn.pinned}" if turn.pinned is not None else ""
+    return f"{_OPEN}{n} role={turn.role}{f' agent={who}' if who else ''}{pin}]]"
 
 
 def render(turns: list[Turn], show_agents=False, viewer: int | None = None) -> str:
@@ -87,12 +89,13 @@ def read_header(line: str) -> dict | None:
     words = s[len(opened):-2].split()
     if not words or not words[0].isdigit():
         return None
-    out = {"n": int(words[0]), "role": None, "agent": None}
+    out = {"n": int(words[0]), "role": None, "agent": None, "pinned": None}
     for word in words[1:]:
         key, eq, value = word.partition("=")
-        if not eq or key not in ("role", "agent") or out[key] is not None:
+        if not eq or key not in ("role", "agent", "pinned") or out[key] is not None:
             return None
         out[key] = value
+    out.pop("pinned")        # a pin mark is read from the record (Turn.pinned), never from a header a command wrote
     if out["role"] not in ROLES or (out["agent"] is not None and not (out["agent"].isdigit() or out["agent"] in ("you", "other"))):
         return None
     if out["agent"] is not None and out["agent"].isdigit():
@@ -135,7 +138,7 @@ def reconcile(old: list[Turn], blocks: list[dict], editor: int | None, labelled:
             t = old[match[j]]
             if labelled and b["agent"] is not None and b["agent"] != t.agent:
                 problems.append(f"turn {b['n']}: its author is agent {t.agent}; turns cannot be relabelled")
-            out.append(Turn(t.role, t.text, t.agent, t.kind, t.id, t.call, t.reply_to, list(t.origin)))
+            out.append(Turn(t.role, t.text, t.agent, t.kind, t.id, t.call, t.reply_to, list(t.origin), t.pinned))
             continue
         if labelled and b["agent"] is not None and b["agent"] != editor:
             problems.append(f"turn {b['n']}: you can only write turns as agent {editor}")

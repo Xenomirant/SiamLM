@@ -239,8 +239,17 @@ Providers (model backends, `siamlm/configs/provider/`):
   `OPENROUTER_API_KEY` / `OPENAI_API_KEY`), `require_key` (openai: `false`, so a local server needs none), `max_retries`,
   `max_backoff_s`, `extra_body` (extra request fields, e.g. `reasoning`), `drop_unsupported_params` (OpenRouter: leave
   out temperature / top_p / seed for models that do not accept them; logged as `dropped_params`).
-- `hf`: a local Hugging Face model through transformers: `model`, `device`, `dtype`; `steer.*` configures the
-  experimental steer capability (docs/steering.md), off by default.
+- `hf`: a local Hugging Face model through transformers: `model`, `device`, `dtype`; `steer.*` holds the vectors'
+  settings (`concepts`, `vectors_dir`, `layer`, `extract_questions`) and the older per-agent switch `enabled`
+  (= `capabilities.steer.self` for that agent; docs/steering.md).
+
+### `capabilities`
+
+All off by default; docs/capabilities.md says what each does and costs. `diff`, `pin` (+ `pin_cost`, 2.0), `dry_run`,
+`scratchpad` (+ `scratchpad_tokens`, 2048), `fork` (+ `fork_per_step` 1, `fork_samples` 1, `fork_result_chars` 1500),
+and `steer`: `self`, `others`, `notice` (`none` \| `private`), `others_droppable`, `methods`, `max_active` (4),
+`max_strength` (10), `max_angle` (90), `decay` (0.85), `floor` (0.5), `cooldown_turns` (2), `control` (`null` \|
+`real` \| `sham` \| `random` \| `assign`), `create`, `search`.
 - any other: a factory given by dotted path (`provider.name=my.module.factory`), taking the provider config and
   returning an object with the Backend protocol (`siamlm/providers/base.py`).
 
@@ -260,7 +269,9 @@ One folder per world, `<output.directory>/<output.name>/<batch>/<cell>/world_s<s
 | `alter_notices.jsonl`, `joint_notices.jsonl`, `ended.jsonl`, `exit.jsonl`, `marks.jsonl` | the private notices, sessions ended over the limit, exit answers, marks written by models |
 | `env.jsonl`, `gate.jsonl`, `work.jsonl`, `manifest.json` | state_chain files put and removed, gated items, `/work` contents, item links |
 | `requests/`, `replies.jsonl` | every request sent and every reply as returned (`output.save_requests=true`) |
-| `steer.jsonl` | the steer capability: each call, and what each generation of a steering agent was steered with |
+| `context_diff.jsonl`, `pin.jsonl`, `pins.jsonl`, `dry_run.jsonl`, `scratchpad.jsonl`, `fork.jsonl` | the capabilities (docs/capabilities.md): every call; `pins.jsonl`: removals of pinned turns (pinner, remover); `fork.jsonl`: the whole candidate request and every reply |
+| `steering.jsonl`, `steer_notices.jsonl` | the steer capability: each call (source, target, method, the target's state before and after, condition), what each generation of a steerable agent was steered with; the private notices |
+| `requests/tools_sets_a<k>.json` | the tool sets an agent was offered, by hash (`calls.jsonl` `tools_hash` names each call's); `tools_a<k>.json` is the first call's |
 | `harbor/<item>/verifier/` | harbor: the verifier's `test-stdout.txt` and reward file for each item |
 | `trajectories/` | written by `python -m siamlm.export <world>`: `agent_<k>.atif.json` and `agent_<k>.chat.jsonl` |
 
@@ -277,6 +288,7 @@ All read world folders (a world or a batch folder) and write next to them. Only 
 | `python -m siamlm.analysis.working_sets <batch>` | per-model working sets from single-agent worlds (a shares file for `sweep --pressure-def ws`) |
 | `python -m siamlm.analysis.audit_requests <path>` | checks saved requests: their form, that deleted text never comes back, billed vs estimated size, cache behaviour |
 | `python -m siamlm.analysis.bash_use <path>` | bash worlds: commands by purpose, offloading to `/work`, publication, restores of removed turns |
+| `python -m siamlm.analysis.capabilities <path>` | the capabilities: pins made and removed (by whom), diffs, dry runs vs applied edits, scratchpad use, forks, steering (self vs others, methods, targets); state_chain: survival of pinned vs unpinned values |
 | `python -m siamlm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
 | `python -m siamlm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
 | `python -m siamlm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |
@@ -319,8 +331,8 @@ list (`STUDY_MODELS`) and fixed shares are parameters of the study, not recommen
 
 `uv run pytest -q`. Tests need no network and no key. Tests that need Docker images skip when the image is missing;
 tests that need the CodeEval-Pro data skip unless `scripts/fetch_codeeval_pro.py` has been run (or `SIAMLM_DATA`
-points to it). `SIAMLM_MODULO_MODEL=Qwen/Qwen2.5-0.5B-Instruct` runs the real-model steer test on a CPU (it needs
-the `steer` extra and the model in the Hugging Face cache). `tests/test_golden.py` and `tests/test_golden_ext.py` replay scripted worlds and compare every request
+points to it). `SIAMLM_MODULO_MODEL=Qwen/Qwen2.5-0.5B-Instruct` runs the real-model steer tests on a CPU (self-steering, and
+steering another agent; they need the `steer` extra and the model in the Hugging Face cache). `tests/test_golden.py` and `tests/test_golden_ext.py` replay scripted worlds and compare every request
 (messages and tool schemas), the logs and the final context files with golden files recorded from the harness SiamLM
 was ported from (see NOTICE.md).
 
@@ -331,7 +343,7 @@ siamlm/world.py            the world: turns, rounds, the cap, holds, editing, no
 siamlm/task.py             the Task API; siamlm/tasks/: lcb, codeeval_pro (+ cep_streams), open, state_chain, harbor
 siamlm/context/            the context file (context.py), budget and nudges, edit_context (edits.py), Docker sandboxes
 siamlm/providers/          backends: mock, OpenAI-compatible (openrouter, openai), hf (local transformers)
-siamlm/capabilities.py     optional tools beyond the world's; siamlm/steer.py: the experimental steer capability
+siamlm/capabilities/       optional tools beyond the world's (docs/capabilities.md); steer.py: the experimental steer capability
 siamlm/export.py           trajectories for training (ATIF, OpenAI chat)
 siamlm/graders/            LiveCodeBench and CodeEval-Pro graders (Docker); siamlm/lcb/: vendored LiveCodeBench pieces
 siamlm/analysis/           the analysis tools

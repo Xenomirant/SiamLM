@@ -6,7 +6,7 @@
 - `openai`: the same client for any OpenAI-compatible endpoint (`provider.base_url`): a vLLM or SGLang server of a
   policy being trained, OpenAI itself, a local gateway. The key is optional (`require_key: false`).
 - `hf`: a local Hugging Face causal LM through transformers (siamlm/providers/hf.py; `pip install siamlm[hf]`); the
-  only backend that can have the experimental `steer` capability (siamlm/steer.py).
+  only backend that can have the experimental `steer` capability (siamlm/capabilities/steer.py).
 - any other `provider.name` is a dotted import path to a factory taking the provider config, so another service can
   be added without editing SiamLM. Any object with `chat(messages, *, seed, temperature, top_p, max_tokens, tools,
   tool_choice)` returning a ProviderResponse works (the Backend protocol below).

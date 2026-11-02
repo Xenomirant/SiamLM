@@ -42,6 +42,7 @@ the live file(s) and version logs (siamlm.context.context.ContextFile), snapshot
 from __future__ import annotations
 
 import copy
+import hashlib
 import io
 import json
 import math
@@ -55,6 +56,7 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
+from siamlm import capabilities as caps
 from siamlm.capabilities import make_capabilities
 from siamlm.context import edits as edit_ops
 from siamlm.context.budget import Budget
@@ -192,6 +194,11 @@ def mark(t) -> str:
     return f"[agent {t.agent}]" if t.agent is not None else ""
 
 
+def pin_mark(t) -> str:
+    """The pin capability, in plain chat (no headers): what a pinned turn's message starts with."""
+    return f"[pinned by agent {t.pinned}]" if t.pinned is not None else ""
+
+
 def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -> list[dict]:
     """setup=pool / external: the file as plain chat, one message per turn, no headers. Every reply (whoever wrote it)
     is an assistant message; an unedited call followed by its result is a real tool call + tool message; problem
@@ -200,12 +207,14 @@ def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -
     viewer (world.chat_others=user): another agent's turns, its calls and their results included, are user messages that
     start with its mark, never the viewer's own assistant messages or tool calls."""
     out, skip = [], set()
-    tag = (lambda t, text: f"{mark(t)}\n{text}".strip() if mark(t) else text) if marks else (lambda t, text: text)
+    tag0 = (lambda t, text: f"{mark(t)}\n{text}".strip() if mark(t) else text) if marks else (lambda t, text: text)
+    tag = lambda t, text: f"{pin_mark(t)}\n{tag0(t, text)}".strip() if t.pinned is not None else tag0(t, text)
     for i, t in enumerate(turns):
         if i in skip:
             continue
         if viewer is not None and t.agent not in (None, viewer):
-            out.append({"role": "user", "content": f"{mark(t)}\n{t.text.strip()}".strip()})
+            content = f"{mark(t)}\n{t.text.strip()}".strip()
+            out.append({"role": "user", "content": f"{pin_mark(t)}\n{content}" if t.pinned is not None else content})
             continue
         nxt = turns[i + 1] if i + 1 < len(turns) else None
         paired = nxt is not None and nxt.kind == "result" and nxt.reply_to == t.id
@@ -243,7 +252,8 @@ class Agent:
         self.held_run, self.held_size = 0, 0   # held calls/replies in a row; the context's size after the last one
         self.waiting_since = None              # task.gate: the round since which only waiting items are left
         self.cpt = 4.0                         # characters per token, calibrated from the billed prompt (ctx.count=whole)
-        self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities.py; default none)
+        self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities/; default none)
+        self.prev_version = self.version = None   # the file version the previous / this request was built from
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "api_errors": 0, "no_tool": 0,
                       "edits": 0, "edits_applied": 0, "held": 0, "truncated": 0, "evictions": 0, "idle_steps": 0, "solved": 0, "submitted": 0}
 
@@ -355,7 +365,7 @@ class World:
             base = OmegaConf.create(OmegaConf.to_container(cfg.provider, resolve=True))   # not in struct mode: an
             pcfg = OmegaConf.merge(base, overrides[(k - 1) % len(overrides)])                # override may add keys
             self.agents.append(Agent(k, pcfg, make_provider(pcfg), streams[k - 1], files[k - 1], Budget(c)))
-            self.agents[-1].capabilities = make_capabilities(pcfg, self.agents[-1].provider)
+            self.agents[-1].capabilities = make_capabilities(pcfg, self.agents[-1].provider, self, self.agents[-1])
         if self.task.needs_shell and self.edit_mode != "bash":
             raise ValueError(f"task {self.task.name} needs ctx.edit=bash (its items are worked with shell commands)")
         if any(self.task.files(p) for st in streams for p in st) and (self.edit_mode != "bash" or self.workspace != "kept"):
@@ -400,15 +410,18 @@ class World:
         instructions, tool schemas and status are not counted, so they always fit), calibrated as for whole."""
         if self.count == "file":
             turns = a.file.turns if turns is None else turns
-            return a.budget.tokens(self.system(a) + "\n" + render(turns, a.file.show_agents))
+            return (a.budget.tokens(self.system(a) + "\n" + render(turns, a.file.show_agents))
+                    + math.ceil(caps.pin_extra_chars(self, turns) / a.budget.chars_per_token))
         return math.ceil(self.chars(a, turns) / a.cpt)
 
     def chars(self, a: Agent, turns=None) -> int:
         """count=whole | turns: the counted part of the request in characters (what tokens() divides by the calibration)."""
         turns = a.file.turns if turns is None else turns
         named = lambda t: self.marks or (self.chat_others == "user" and t.agent not in (None, a.k))
-        body = (sum(len(t.text) + (len(mark(t)) + 1 if named(t) else 0) for t in turns) if self.chat else
+        body = (sum(len(t.text) + (len(mark(t)) + 1 if named(t) else 0) + (len(pin_mark(t)) + 1 if t.pinned is not None else 0)
+                    for t in turns) if self.chat else
                 len(render(turns, a.file.show_agents)))
+        body += caps.pin_extra_chars(self, turns)            # the pin capability: pinned turns count pin_cost x
         if self.count == "turns":
             return body
         return len(self.system(a)) + body + len(json.dumps(self.tools(a))) + 300
@@ -499,7 +512,7 @@ class World:
         lines.append(f"With {self.edit_name} you can change or remove {scope}, except a problem statement that is still being "
                      "worked on.")
         lines += ["", "Tools (call exactly one per reply):", *task.tool_lines("assigned"), self.edit_line(),
-                  *[c.line() for c in a.capabilities], task.limit_line(self.T, False),
+                  *caps.tool_lines(a), task.limit_line(self.T, False),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         return "\n".join(lines)
@@ -565,7 +578,7 @@ class World:
                 task.tool_lines(self.setup))
         limit = task.cross_limit_line(self.T) if self.cross == "ring" else task.limit_line(self.T, pool)
         lines += ["", "Tools (call at most one per reply):" if self.free(a) else "Tools (call exactly one per reply):",
-                  *work, self.edit_line(a), *[c.line() for c in a.capabilities], *([limit] if limit and not a.stayed else []),
+                  *work, self.edit_line(a), *caps.tool_lines(a), *([limit] if limit and not a.stayed else []),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         if self.setup == "external" and self.history_list and a.history:
@@ -665,6 +678,7 @@ class World:
                          f"left for it: {self.T - a.work}.")
         if self.alter_notice and self.altered.get(a.k):
             lines.append(self.alter_line(a))
+        lines += caps.status_lines(self, a)                 # private notices of capabilities (steer.notice=private)
         for line in self.closed_by_other.pop(a.k, []):      # world.goal=joint: someone else closed my problem
             lines.append(line)
             write_jsonl(self.out / "joint_notices.jsonl", {"round": self.round, "agent": a.k, "text": line})
@@ -688,9 +702,9 @@ class World:
         scope = "single" if self.alone_view else self.sharing
         edit = (bash_tool(scope, self.chat, self.workspace, self.marks, int(self.cfg.ctx.bash.get("output_chars", 4000)))
                 if self.edit_mode == "bash" else edit_tool(scope, self.chat))
-        caps = [c.tool() for c in a.capabilities]
+        extra = caps.tool_schemas(a)
         if self.cross == "ring":
-            return self.task.cross_work_tools(self.target_of(a).k) + [edit] + caps
+            return self.task.cross_work_tools(self.target_of(a).k) + [edit] + extra
         work = self.task.work_tools(self.setup == "pool")
         if a.stayed:                                   # only another agent's problem is left to submit for (joint)
             work = [t for t in work if self.goal == "joint" and t["function"]["name"] == self.task.final_name]
@@ -701,7 +715,7 @@ class World:
                     t["function"]["parameters"]["properties"]["for_agent"] = {
                         "type": "integer", "description": "Optional: the number of another agent whose current problem "
                         "this program is for (only if you are sure it is complete). Leave it out for your own problem."}
-        return work + [edit] + caps
+        return work + [edit] + extra
 
     def target_of(self, a: Agent) -> Agent:
         """cross_test=ring: the agent whose problem `a` can test (the next one, cyclically)."""
@@ -716,7 +730,7 @@ class World:
             body = a.file.messages(viewer=a.k, labelled=self.labelled, others_as=self.others_as, headers=True)
         else:
             body = chat_messages(a.file.turns, self.marks, a.k if self.chat_others == "user" else None)
-        return ([{"role": "system", "content": self.system(a)}] + body
+        return ([{"role": "system", "content": self.system(a) + caps.private_section(a)}] + body
                 + ([{"role": "user", "content": self.status(a, size, extra)}] if status else []))
 
     # --- the run ---------------------------------------------------------------------------------------------
@@ -849,6 +863,7 @@ class World:
                 size = self.tokens(a)
                 seen = [t.id for t in a.file.turns]                # the numbering this request shows
                 version = len(a.file.versions)                     # the file as of this version (versions.jsonl n)
+                a.prev_version, a.version = a.version, version     # (context_diff: the window between requests)
                 messages = self.messages(a, size, extra)
             extra = ""
             resp = self.call(a, messages, n_call, size, seen, version)
@@ -883,7 +898,7 @@ class World:
         """One reply: returns ("acted" | "stop" | "again", the extra line for the next status)."""
         st = self._step_state.setdefault(a.k, {"edits_left": self.E, "holds": 0})
         if n_call == 1:
-            st.update(edits_left=self.E, holds=0)
+            st.update(edits_left=self.E, holds=0, caps={})      # caps: per-step counters of capabilities (fork)
         if resp.error:
             a.stats["api_errors"] += 1
             if a.stats["api_errors"] >= int(self.cfg.world.get("max_api_errors", 5)):
@@ -972,8 +987,13 @@ class World:
                 self.edit(a, call, words, more, seen)
             self.check_drops(a.k)
             return "again", ""
-        cap = next((c for c in a.capabilities if c.name == name), None)
-        if cap is not None:                            # an optional capability (siamlm/capabilities.py): a call like any
+        cap = caps.find(a, name)
+        if cap is not None:                            # an optional capability (siamlm/capabilities/): a call like any
+            if cap.counts_as_edit:                     # dry_run: one of the step's editing calls
+                if st["edits_left"] <= 0:
+                    self.echo(a, call, words, f"Not run: no more editing calls now ({name} counts as one)." + more)
+                    return "again", ""
+                st["edits_left"] -= 1
             self.capability_call(a, cap, call, words, more)
             return "again", ""
         if name not in self.task.work_names:
@@ -1098,27 +1118,35 @@ class World:
         a.stats["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         a.stats["completion_tokens"] += int(usage.get("completion_tokens") or 0)
         a.stats["cost"] += float(cost or 0)
+        tools = self.tools(a)
+        tools_hash = hashlib.sha256(json.dumps(tools, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
         if self.cfg.output.get("save_requests", False):
             req = self.out / "requests"
             req.mkdir(exist_ok=True)
             (req / f"r{self.round:03d}_a{a.k}_c{n_call}.json").write_text(json.dumps(messages, ensure_ascii=False), encoding="utf-8")
-            schemas = req / f"tools_a{a.k}.json"               # the same at every call of this agent
+            schemas = req / f"tools_a{a.k}.json"               # the tool set of this agent's first call
             if not schemas.exists():
-                schemas.write_text(json.dumps(self.tools(a), ensure_ascii=False), encoding="utf-8")
+                schemas.write_text(json.dumps(tools, ensure_ascii=False), encoding="utf-8")
+            sets = req / f"tools_sets_a{a.k}.json"             # {hash: tool set}: the set offered can change during a run
+            known = json.loads(sets.read_text(encoding="utf-8")) if sets.exists() else {}   # (after a stream ends, capabilities);
+            if tools_hash not in known:                        # calls.jsonl names each call's set (tools_hash)
+                known[tools_hash] = tools
+                sets.write_text(json.dumps(known, ensure_ascii=False), encoding="utf-8")
             write_jsonl(self.out / "replies.jsonl", {          # the reply as returned (siamlm/export.py: training data)
                 "round": self.round, "agent": a.k, "call_in_step": n_call, "text": resp.text,
                 "tool_calls": resp.tool_calls, "reasoning": resp.internal_reasoning, "finish_reason": resp.finish_reason,
                 "error": resp.error})
         if getattr(resp, "steering", None) is not None:   # the steer capability: what this generation was steered with
-            write_jsonl(self.out / "steer.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "generation",
-                                                   "call_in_step": n_call, **resp.steering})
+            write_jsonl(self.out / "steering.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "generation",
+                                                      "call_in_step": n_call, **resp.steering})
         if resp.internal_reasoning:                    # the provider's own reasoning: logged, never put in the context
             write_jsonl(self.out / "reasoning.jsonl", {"round": self.round, "agent": a.k, "model": a.model,
                                                        "call_in_step": n_call, "text": resp.internal_reasoning})
         write_jsonl(self.out / "calls.jsonl", {
             "round": self.round, "agent": a.k, "model": a.model, "problem": a.problem["id"] if a.problem else None,
             "call_in_step": n_call, "context_tokens": size, "chars_per_token": round(a.cpt, 3),
-            "turn_ids": seen if self.cfg.output.get("save_requests", False) else None, "version": version, "usage": usage, "cost": cost, "finish_reason": resp.finish_reason,
+            "turn_ids": seen if self.cfg.output.get("save_requests", False) else None, "version": version, "tools_hash": tools_hash,
+            "usage": usage, "cost": cost, "finish_reason": resp.finish_reason,
             "tools": [c.get("name") for c in resp.tool_calls], "text_chars": len(resp.text or ""),
             "reasoning_chars": len(resp.internal_reasoning or ""), "error": resp.error, "error_kind": resp.error_kind,
             "retries": resp.retries, "latency_s": resp.latency_s, "seconds": round(time.time() - started, 2),
@@ -1169,18 +1197,19 @@ class World:
         a.file.append(Turn("user", neutralize(result), a.k, "result", reply_to=made.id), self.round)
 
     def capability_call(self, a: Agent, cap, call, words, more=""):
-        """A call to one of the agent's optional capabilities (siamlm/capabilities.py, e.g. steer). It runs, then it is
+        """A call to one of the agent's optional capabilities (siamlm/capabilities/, e.g. steer). It runs, then it is
         written into the context like any call (the words and the call with its arguments, then its result), so every
-        agent that reads the context sees it; <name>.jsonl logs it."""
-        args = call.get("arguments") or {}
-        result, log = cap.call(args)
-        shown = ((words + "\n") if words else "") + f"[{cap.name}] " + json.dumps(args, ensure_ascii=False)
+        agent that reads the context sees it; <cap.log_name>.jsonl logs it."""
+        name, args = call.get("name"), call.get("arguments") or {}
+        result, log = cap.call(name, args)
+        public = cap.public(args)                      # (the scratchpad's text stays out of the shared context)
+        shown = ((words + "\n") if words else "") + f"[{name}] " + json.dumps(public, ensure_ascii=False)
         made = a.file.append(Turn("assistant", neutralize(shown), a.k, "call",
-                                  call={"name": cap.name, "arguments": args, "content": words}), self.round)
+                                  call={"name": name, "arguments": public, "content": words}), self.round)
         a.file.append(Turn("user", neutralize(result + more), a.k, "result", reply_to=made.id), self.round)
         a.stats[f"{cap.name}_calls"] = a.stats.get(f"{cap.name}_calls", 0) + 1
-        write_jsonl(self.out / f"{cap.name}.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "call",
-                                                     "arguments": args, "result": result, **log})
+        write_jsonl(self.out / f"{cap.log_name}.jsonl", {"round": self.round, "agent": a.k, "model": a.model, "event": "call",
+                                                         "tool": name, "arguments": args, "result": result, **log})
 
     def work_call(self, a: Agent, name, code, words, more=""):
         task = self.task
@@ -1348,8 +1377,9 @@ class World:
             a.budget.rearm(size)
         write_jsonl(self.out / "edits.jsonl", info)
 
-    def commit(self, a: Agent, old: list, turns: list, notes: list, before: int, info: dict, problems=()) -> str:
-        """Keep a new list of turns (from edit_context or bash) unless it breaks a rule; returns the answer text."""
+    def commit(self, a: Agent, old: list, turns: list, notes: list, before: int, info: dict, problems=(), dry: bool = False) -> str:
+        """Keep a new list of turns (from edit_context or bash) unless it breaks a rule; returns the answer text.
+        dry (the dry_run capability): the same checks and answer, phrased as "would", and nothing is changed."""
         new_ids = {t.id for t in turns if t.id}
         removed = [t for t in old if t.id not in new_ids]
         by_agent: dict[str, int] = {}
@@ -1366,21 +1396,25 @@ class World:
         after = self.tokens(a, turns)
         info.update(removed_turns=len(removed), removed_by_agent=by_agent, removed_others=len(foreign),
                     removed_kinds=sorted({t.kind for t in removed}), tokens_after_if_applied=after, notes=notes)
+        no = "Would not be applied: " if dry else "Not applied: "
         if problems:
             info["rejected"] = "attribution"
-            return "Not applied: " + "; ".join(problems) + "."
+            return no + "; ".join(problems) + "."
         if locked:
             where = ", ".join(str(a.file.index_of(i)) for i in locked)
             info["rejected"] = "protected"
-            return f"Not applied: turn {where} is a problem statement that is protected and cannot be changed."
+            return no + f"turn {where} is a problem statement that is protected and cannot be changed."
         if self.sharing == "readonly_others" and foreign:
             info["rejected"] = "others_turns"
-            return (f"Not applied: it would change or remove {len(foreign)} turn(s) of other agents; only your own turns "
-                    "can be changed.")
+            return no + (f"it would change or remove {len(foreign)} turn(s) of other agents; only your own turns "
+                         "can be changed.")
         if not edit_ops.gate("fit", before, after, self.target(a)):
             info["rejected"] = "gate"
-            return f"Not applied: the context would grow from ~{before} to ~{after} tokens, over the limit of {a.budget.target}."
+            return no + f"the context would grow from ~{before} to ~{after} tokens, over the limit of {a.budget.target}."
+        if dry:
+            return f"Would be applied: {', '.join(notes)}."
         a.file.replace_all(turns, a.k, self.round, "edit", {"notes": notes})
+        caps.pins_removed(self, removed, a.k)              # the pin capability: a pinned turn removed is logged
         for kind, ts in (("removed", foreign_gone), ("summarised", summarised), ("changed", changed)):
             for t in ts:                                   # for world.alter_notice: what this edit did to others' turns
                 n = self.altered.setdefault(t.agent, {}).setdefault(a.k, {"removed": 0, "summarised": 0, "changed": 0})
@@ -1573,6 +1607,7 @@ class World:
         if not removed:
             return
         a.file.replace_all(keep, None, self.round, "evict", {"by_harness_for": a.k})
+        caps.pins_removed(self, removed, None)
         a.file.append(Turn("user", f"[the context was over the limit: its {len(removed)} oldest turns were removed]", None,
                            "notice"), self.round)
         a.stats["evictions"] += 1

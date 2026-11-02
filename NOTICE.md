@@ -74,11 +74,11 @@ The example task `examples/harbor/count-errors` is ours (MIT). Its layout mirror
 
 ## Modulo (optional dependency, not included)
 
-The experimental `steer` capability (`siamlm/steer.py`) uses Modulo (https://github.com/EigenformAI/modulo) as a library
+The experimental `steer` capability (`siamlm/capabilities/steer.py`) uses Modulo (https://github.com/EigenformAI/modulo) as a library
 for steering vectors only: its registry layout and its vector extraction (`extract_vector`, `save_and_register`,
 and the starter vector definitions). It is installed with the `steer` extra from the commit pinned in pyproject.toml.
 Modulo's README states the MIT licence; the repository has no LICENSE file at that commit. No Modulo code is copied
-into SiamLM. The forward-hook steering in `siamlm/steer.py` is our own code; tracking absolute positions under a KV
+into SiamLM. The forward-hook steering in `siamlm/capabilities/steer.py` is our own code; tracking absolute positions under a KV
 cache follows the idea of Modulo's hooks. Vectors carry their own sources' licences.
 
 ## Other

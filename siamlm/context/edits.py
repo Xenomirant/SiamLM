@@ -145,7 +145,7 @@ def apply(turns: list[Turn], arguments, editor: int | None, show_agents: bool = 
         if k in covered:
             continue
         if k not in texts:
-            work.append(Turn(t.role, t.text, t.agent, t.kind, t.id, t.call, t.reply_to, list(t.origin)))
+            work.append(Turn(t.role, t.text, t.agent, t.kind, t.id, t.call, t.reply_to, list(t.origin), t.pinned))
             continue
         text = t.text
         for e in texts[k]:

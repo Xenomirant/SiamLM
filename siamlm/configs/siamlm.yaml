@@ -117,6 +117,39 @@ ctx:
   chars_per_token: 4
   tokenizer: auto            # tiktoken o200k if installed, else characters / 4
 
+capabilities:                # tools agents may use, each opt-in and off by default (docs/capabilities.md). They change
+                             # only contexts and activations; nothing here can change grading, limits, holds or logs
+  diff: false                # context_diff(): the turns removed, rewritten or added since the agent's previous call
+  pin: false                 # pin(turn) / unpin(turn): a mark everyone sees (pinned=k); pinned turns cost pin_cost x
+  pin_cost: 2.0              # their size against the limit; removing a pinned turn is logged (pins.jsonl)
+  dry_run: false             # dry_run: what a bash command / edit_context call would change, without applying it
+                             # (counts as one of max_edit_calls)
+  scratchpad: false          # scratchpad(action, text): private notes in the agent's own instructions, never in the context
+  scratchpad_tokens: 2048    # the scratchpad's own limit (not counted against the shared limit)
+  fork: false                # fork(question, command | edit): the agent's own model once on a candidate context; the
+                             # reply (and its tool call, not carried out) is returned; nothing else enters the world
+  fork_per_step: 1           # fork calls per step
+  fork_samples: 1            # model calls per fork (different seeds)
+  fork_result_chars: 1500    # the result shown in the context is cut there (fork.jsonl holds everything)
+  steer:                     # EXPERIMENTAL (docs/steering.md); vectors need provider=hf and the steer extra (Modulo)
+    self: false              # steer one's own activations (hf agents; = provider.steer.enabled for that agent)
+    others: false            # steer another agent's activations (the target must be an hf agent; the source may be any)
+    notice: none             # none | private: the target's next status line says who steered it with what (never
+                             # in the shared context, like world.alter_notice)
+    others_droppable: true   # false: a target cannot drop steering that another agent applied to it
+    methods: [additive, ablation, rotation]
+    max_active: 4            # concepts active per target
+    max_strength: 10         # additive: |strength| is clamped to this (15 = the layer's typical activation norm)
+    max_angle: 90            # rotation: |degrees| is clamped to this
+    decay: 0.85              # after each reply of the target, every active strength is multiplied by this
+    floor: 0.5               # additive: below this in size a concept is removed (ablation 0.05, rotation 1 degree)
+    cooldown_turns: 2        # steering the same other agent again needs this many of its replies in between
+    control: null            # null (real, nothing said) | real | sham | random | assign (per target, from the seed):
+                             # when set, the instructions disclose that steering may be real, sham or random; the
+                             # condition is never shown and is logged (steering.jsonl)
+    create: true             # create(concept, more, less | files): extraction from the agent's own prompt pairs
+    search: true             # search(query): the registry
+
 reasoning: default           # default | low | off: sets provider.extra_body.reasoning (OpenRouter) for every agent
                              # unless an agent override gives extra_body
 

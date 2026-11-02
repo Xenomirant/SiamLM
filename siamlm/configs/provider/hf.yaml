@@ -9,8 +9,10 @@ temperature: 0.7
 top_p: 0.9
 timeout: 600
 max_retries: 0
-# steer: EXPERIMENTAL, off by default (siamlm/steer.py, docs/steering.md; pip install "siamlm[steer]"). When enabled,
-# the agent gets one more tool, steer(concept, strength), that adds a steering vector to its own later generations.
+# steer: EXPERIMENTAL (siamlm/capabilities/steer.py, docs/steering.md; pip install "siamlm[steer]"). The vectors'
+# settings (concepts, vectors_dir, layer, extract_questions) for any steering of this agent; `enabled: true` is the
+# older per-agent switch for self-steering with the behaviour settings below (= capabilities.steer.self for this agent;
+# the capabilities.steer block in siamlm.yaml configures steering for the whole world, self and others).
 # Per agent: world.agent_providers=[{steer: {enabled: true}}, {}] steers agent 1 only.
 steer:
   enabled: false

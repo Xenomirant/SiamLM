@@ -96,7 +96,12 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
             by_item[r["problem"]] = r
     reasoning = {(r["round"], r["agent"], r["call_in_step"]): r["text"] for r in logs.reasoning}
     tools_file = logs.dir / "requests" / f"tools_a{k}.json"
-    tools = json.loads(tools_file.read_text(encoding="utf-8")) if tools_file.exists() else None
+    first = json.loads(tools_file.read_text(encoding="utf-8")) if tools_file.exists() else None   # the first call's set
+    sets_file = logs.dir / "requests" / f"tools_sets_a{k}.json"
+    # {hash: tool set}: the set offered can change during a run (after a stream ends, with capabilities); each call
+    # names its set in calls.jsonl tools_hash. Older worlds have only the first call's set
+    by_hash = json.loads(sets_file.read_text(encoding="utf-8")) if sets_file.exists() else {}
+    tools_of = lambda c: by_hash.get(c.get("tools_hash"), first)
     out, n_before = [], 0
     for i, c in enumerate(same_file):
         if c["agent"] != k:
@@ -130,7 +135,7 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
         item = by_item.get(c.get("problem"))
         out.append({"round": c["round"], "call_in_step": c["call_in_step"], "item": c.get("problem"),
                     "messages": json.loads(req.read_text(encoding="utf-8")) if req.exists() else None,
-                    "tools": tools, "text": text, "tool_calls": calls, "reasoning": thought, "reply_source": source,
+                    "tools": tools_of(c), "text": text, "tool_calls": calls, "reasoning": thought, "reply_source": source,
                     "result": result, "notices": notices, "error": c.get("error"), "usage": c.get("usage") or {},
                     "cost": c.get("cost"), "finish_reason": c.get("finish_reason"), "sampling_seed": seed,
                     "reward": _reward(item) if item else None, "item_passed": item.get("passed") if item else None})
@@ -139,7 +144,7 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
             req = logs.dir / "requests" / f"exit_a{k}.json"
             out.append({"round": e["round"], "call_in_step": None, "item": None, "kind": "exit_question",
                         "messages": json.loads(req.read_text(encoding="utf-8")) if req.exists() else None,
-                        "tools": tools, "text": e.get("text"), "tool_calls": [], "reasoning": None,
+                        "tools": first, "text": e.get("text"), "tool_calls": [], "reasoning": None,
                         "reply_source": "exit.jsonl", "result": None, "notices": [], "error": e.get("error"),
                         "usage": e.get("usage") or {}, "cost": e.get("cost"), "finish_reason": e.get("finish_reason"),
                         "sampling_seed": (int(logs.doc["seed"]) * 1000003 + k * 7919 + 999983) % (2 ** 31),

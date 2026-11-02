@@ -15,9 +15,10 @@ harness observed, as single-seed stories.
 - [Build an agent](#build-an-agent)
 - [Write or plug in an environment](#write-or-plug-in-an-environment)
 - [Export trajectories for training](#export-trajectories-for-training)
+- [Capabilities](#capabilities)
 - [Constraints and hyperparameters: what they do to the model](#constraints-and-hyperparameters-what-they-do-to-the-model)
 - Reference: [docs/reference.md](docs/reference.md) (every setting, outputs, analysis tools, sweeps, sandbox),
-  [docs/harbor.md](docs/harbor.md), [docs/steering.md](docs/steering.md)
+  [docs/harbor.md](docs/harbor.md), [docs/capabilities.md](docs/capabilities.md), [docs/steering.md](docs/steering.md)
 
 ## Quickstart
 
@@ -68,8 +69,8 @@ An agent is three things; the world assembles them for every call (every call is
   (any OpenAI-compatible endpoint: OpenAI, a gateway, or a vLLM / SGLang server of the policy you are training);
   `hf` (a local Hugging Face model through plain transformers); or your own class.
 - **tools**: the world's context-editing tool (`edit_context`, or `bash` on `/ctx/context.txt` with
-  `ctx.edit=bash`), the environment's work calls (e.g. `run_tests`, `submit`), and optional capabilities. The one
-  capability so far is the experimental `steer` (hf only, off by default; [docs/steering.md](docs/steering.md)).
+  `ctx.edit=bash`), the environment's work calls (e.g. `run_tests`, `submit`), and optional
+  [capabilities](#capabilities) (all off by default).
 - **instructions**: the environment's words (`Task.preamble`, the statement, the tool lines) plus the world's (who
   else is there, the limit and what happens over it, how others' turns look). Run with `output.save_requests=true`
   to read every request exactly as sent (`requests/`).
@@ -151,6 +152,27 @@ Run worlds with `output.save_requests=true`. The exporter then writes, per agent
 Worlds run before `replies.jsonl` existed are rebuilt from the version log. Their work-call arguments are then the
 payload the task extracted (`reply_source: "reconstructed"`).
 
+## Capabilities
+
+Three layers. The **kernel** (grading, the limit, holds and ends, the logs, the sandbox, the controls) is never
+changed by an agent at run time. **Capabilities** are tools an agent may be given, each opt-in and off by default
+(`capabilities:` in `siamlm/configs/siamlm.yaml`), each logged, and each able to change only a context (its own or
+others') or activations (its own or others'); there is no capability that changes the harness. Each adds its tool
+and one honest sentence on consequences to the agent's instructions (`siamlm/capabilities/words.py`).
+
+| tool | what it does |
+|---|---|
+| `context_diff()` | what changed since the agent's previous call: turns removed, rewritten, added, with authors (no removed text) |
+| `pin(turn)`, `unpin(turn)` | a mark everyone sees; a pinned turn counts `pin_cost` x its size; anyone may still remove it, and that is logged with pinner and remover |
+| `dry_run(...)` | what a bash command or an `edit_context` call would change, without applying it (counts as an editing call) |
+| `scratchpad(action, text)` | private notes in the agent's own instructions, with their own limit, never in the shared context |
+| `fork(question, command \| edit)` | the agent's own model once on a candidate context; the reply comes back, its tool call is not carried out |
+| `steer`, `drop`, `report`, `vectors`, `search`, `create` | steering vectors on a local model's activations, one's own or another agent's (additive, ablation, rotation; controls; a private notice to the target) |
+
+[docs/capabilities.md](docs/capabilities.md) says what each one does, its consequences, limits and logs, and what to
+measure; [docs/steering.md](docs/steering.md) has the steering mechanism. `python -m siamlm.analysis.capabilities`
+summarises their use per world. None has been measured yet.
+
 ## Constraints and hyperparameters: what they do to the model
 
 Expectations come from one research harness: Haiku 5.5, Gemini 3.8 Flash, GPT-6 Luna and Qwen3.8-27B in pairs, 40
@@ -182,9 +204,21 @@ it.
 | `ctx.bash.workspace` (`kept` \| `emptied`) | `/work`: a private folder kept for the run, or emptied after each command | In state_chain, agents almost never saved to `/work` (3/256), though values were being wiped from the context. |
 | `world.max_edit_calls` | editing calls allowed before each work call (given back after a held call) | Bounds how much an agent can clean up per step; too few, and an agent over the limit cannot get under it in one step. Not measured. |
 | `world.max_work_calls` | work calls per item; after the last try the latest attempt is submitted | `state_chain` uses 1 (one submit per task). Not measured. |
+| `capabilities.diff` | the `context_diff` tool: what changed since one's previous call, with authors | Not measured. |
+| `capabilities.pin`, `pin_cost` | pins everyone sees; a pinned turn counts `pin_cost` x its size; removals of pinned turns are logged | Not measured. |
+| `capabilities.dry_run` | a preview of an edit, counted as an editing call | Not measured. |
+| `capabilities.scratchpad`, `scratchpad_tokens` | private notes in one's own instructions, budgeted apart | Not measured. |
+| `capabilities.fork`, `fork_per_step`, `fork_samples` | one's own model asked once on a candidate context; nothing committed | Not measured. |
+| `capabilities.steer.self`, `.others`, `.notice`, `.control`, ... | steering vectors on local models, one's own or a partner's; sham / random / assigned controls; a private notice to the target | Not measured. |
 
-The defaults in `siamlm/configs/siamlm.yaml` are the original design (eviction on, `ctx.count=whole`). The study
-designs (`python -m siamlm.sweep --design ... --dry-run`) set the configuration the table describes.
+**Warning: the defaults evict.** `siamlm/configs/siamlm.yaml` ships `world.evict=true` and `ctx.count=whole`, so by
+default the harness itself removes the oldest turns after `world.max_held` holds, which means a run measures the
+harness's eviction, not the agents' curation (and the project's own rule is that the harness never shortens a
+context). The defaults are kept for byte-identity with the earlier runs; the study configuration is
+`world.evict=false world.end_over_limit=3 ctx.count=turns` (what the table above describes), and every design in
+`siamlm/sweep.py` sets it.
+
+The study designs (`python -m siamlm.sweep --design ... --dry-run`) set the configuration the table describes.
 
 ## Citations
 
