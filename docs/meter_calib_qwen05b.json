@@ -1,0 +1,192 @@
+[
+ {
+  "cond": "base",
+  "tensor": "-",
+  "changed": 0,
+  "rel_frob": 0.0,
+  "out_change": 0.0,
+  "kl": 0.0,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=1000 x0.5",
+  "tensor": "down",
+  "changed": 1000,
+  "rel_frob": 0.007792812772095203,
+  "out_change": 0.006754155270755291,
+  "kl": 1.2020571715763063e-05,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=1000 x2.0",
+  "tensor": "down",
+  "changed": 1000,
+  "rel_frob": 0.031171249225735664,
+  "out_change": 0.027703706175088882,
+  "kl": 0.00022994159454512328,
+  "acc": 0.1,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=10000 x0.5",
+  "tensor": "down",
+  "changed": 10000,
+  "rel_frob": 0.024087538942694664,
+  "out_change": 0.021783193573355675,
+  "kl": 0.00010399392197849632,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=10000 x2.0",
+  "tensor": "down",
+  "changed": 10000,
+  "rel_frob": 0.09635015577077866,
+  "out_change": 0.08991937339305878,
+  "kl": 0.0017728429925994258,
+  "acc": 0.1,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=100000 x0.5",
+  "tensor": "down",
+  "changed": 100000,
+  "rel_frob": 0.07579497247934341,
+  "out_change": 0.06846606731414795,
+  "kl": 0.0016038235150618453,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=100000 x2.0",
+  "tensor": "down",
+  "changed": 100000,
+  "rel_frob": 0.3031799793243408,
+  "out_change": 0.27589407563209534,
+  "kl": 0.029495040454078063,
+  "acc": 0.08333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=1000000 x0.5",
+  "tensor": "down",
+  "changed": 1000000,
+  "rel_frob": 0.23961471021175385,
+  "out_change": 0.21833543479442596,
+  "kl": 0.008736673887164285,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "random down n=1000000 x2.0",
+  "tensor": "down",
+  "changed": 1000000,
+  "rel_frob": 0.9584593176841736,
+  "out_change": 0.8770986199378967,
+  "kl": 0.1915860397212004,
+  "acc": 0.05,
+  "loop": 0.0
+ },
+ {
+  "cond": "random o n=100000 x2",
+  "tensor": "o",
+  "changed": 100000,
+  "rel_frob": 0.706368088722229,
+  "out_change": 0.9143436551094055,
+  "kl": 0.08689703479002606,
+  "acc": 0.05,
+  "loop": 0.0
+ },
+ {
+  "cond": "delete top direction (down, all rows)",
+  "tensor": "down",
+  "changed": 4358144,
+  "rel_frob": 0.06263668835163116,
+  "out_change": 0.23976314067840576,
+  "kl": 0.028586343442049494,
+  "acc": 0.13333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "delete top direction (down, 64 rows)",
+  "tensor": "down",
+  "changed": 311296,
+  "rel_frob": 0.044675469398498535,
+  "out_change": 0.17096465826034546,
+  "kl": 0.008090856793018157,
+  "acc": 0.13333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "delete top direction (o, all rows)",
+  "tensor": "o",
+  "changed": 802816,
+  "rel_frob": 0.0549892894923687,
+  "out_change": 0.337137371301651,
+  "kl": 0.010379253342496545,
+  "acc": 0.13333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "delete top direction (down, layer L-3, all rows)",
+  "tensor": "down_late",
+  "changed": 4358144,
+  "rel_frob": 0.04771535098552704,
+  "out_change": 0.0609089694917202,
+  "kl": 0.007388868517157162,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "delete top direction (down, layer L-3, 64 rows)",
+  "tensor": "down_late",
+  "changed": 311296,
+  "rel_frob": 0.047695234417915344,
+  "out_change": 0.06085694581270218,
+  "kl": 0.007384474782413694,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "scale 64 rows of down x0.5",
+  "tensor": "down",
+  "changed": 311296,
+  "rel_frob": 0.1328718066215515,
+  "out_change": 0.13067898154258728,
+  "kl": 0.004764005845266111,
+  "acc": 0.13333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "scale 64 rows of down x0",
+  "tensor": "down",
+  "changed": 311296,
+  "rel_frob": 0.265743613243103,
+  "out_change": 0.26135796308517456,
+  "kl": 0.018082713214964585,
+  "acc": 0.13333333333333333,
+  "loop": 0.0
+ },
+ {
+  "cond": "zero top-10000 |w| of down",
+  "tensor": "down",
+  "changed": 10000,
+  "rel_frob": 0.2182324230670929,
+  "out_change": 0.34104371070861816,
+  "kl": 0.02731872472858257,
+  "acc": 0.11666666666666667,
+  "loop": 0.0
+ },
+ {
+  "cond": "zero top-100000 |w| of down",
+  "tensor": "down",
+  "changed": 100000,
+  "rel_frob": 0.4591292142868042,
+  "out_change": 0.5339769721031189,
+  "kl": 0.07539363283167681,
+  "acc": 0.06666666666666667,
+  "loop": 0.0
+ }
+]

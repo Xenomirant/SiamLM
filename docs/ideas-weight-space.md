@@ -142,6 +142,17 @@ They are the weight-space counterparts of the context limit: a constraint whose 
   base on a 100-prompt probe, and a crude task score (exact match on 100 GSM8K-style items, plus the loop rate). The
   question is which meter tracks KL and the score; the expectation is that Frobenius does not and output change does.
   An hour on 16 cores.
+  **Run (3 Nov, `scripts/meter_calib.py`, results in `docs/meter_calib_qwen05b.json`; 60 items, 48 tokens, CPU,
+  11 min).** Spearman rank correlation with the probe KL over 19 edits: relative Frobenius 0.82, relative output
+  change 0.94. The targeted edits are where they part: deleting the top output direction of the mid-layer MLP
+  down-projection has relative Frobenius 0.06 but output change 0.24 and KL 0.029, the same KL as a random edit of
+  100k weights at five times that Frobenius size (0.30, output change 0.28); the same deletion restricted to 64 rows
+  (the post's shape of edit) is Frobenius 0.045 against output change 0.17. A Frobenius cap of 0.05 lets the targeted
+  edits through and blocks random ones of equal effect; the output-change cap orders them as the KL does. Caveats:
+  the 0.5B model solves only 12 % of the items, so the task score is uninformative here (both meters correlate
+  weakly with its drop, 0.55 and 0.35); no edit in this set made the model loop; and all edits are on one or two
+  tensors, so "per tensor vs per layer block" is still open. Constraint 2 stays as written: output change, with
+  Frobenius only as the coarse sanity bound.
 - *Plumbing.* Delta log, apply, rollback, reload: a round trip is byte-identical to the base checkpoint; a refused
   commit leaves the loaded weights untouched. Pure unit tests, seconds.
 - *Activation message probe.* Same model both sides: take layer-L residuals over a 4-token span, write them over
