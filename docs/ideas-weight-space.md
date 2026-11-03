@@ -111,8 +111,14 @@ drifts. All are constraints with numbers in the config, shown to the agents as f
 1. **Edit budget.** At most `max_changed` weights per commit and `max_changed_total` per world (the post's fix was
    131k of 0.8B; start at 1 % of the model and lower it). Optional `allowed_tensors` (e.g. MLP down-projections and
    attention outputs of listed layers), a knob that also makes the search space readable.
-2. **Per-tensor norm cap.** `||delta_T||_F / ||W_T||_F ≤ rho` for the cumulative delta of each tensor (rho 0.05 to
-   start). A commit that would exceed it is refused with the number.
+2. **Per-layer output-change cap, not a weight-norm cap.** Weight distance is a poor proxy for behaviour: the
+   post's Qwen fix moved 0.016 % of the weights by a tiny Frobenius amount and changed the model completely, by
+   deleting one direction; a diffuse edit of far larger norm can do nothing. So the local constraint is in activation
+   space: on a fixed calibration batch (kernel), `||(W+delta) x - W x|| / ||W x|| <= rho` per edited tensor, averaged
+   over the batch's token positions (rho 0.05 to start). This is the layer's own "trust region": how much its output
+   moves on typical inputs. A relative Frobenius bound stays only as a coarse sanity check against blow-ups, with a
+   loose number. (Open: whether rho should be per tensor or per layer block; measure both in the calibration test
+   below before choosing.)
 3. **Behavioural anchor.** At every reload (and in every `probe` result): mean per-token KL(base || current) on the
    kernel probe set, and the base model's own task score next to the current one. A reload whose KL exceeds
    `kl_max` is **not applied**; the committed version stays committed, the loaded version stays, both agents are told
@@ -127,6 +133,21 @@ drifts. All are constraints with numbers in the config, shown to the agents as f
 
 All six are kernel, none change what counts as better, and every refusal is logged with the number that triggered it.
 They are the weight-space counterparts of the context limit: a constraint whose number is the experiment.
+
+**Cheap local tests first (CPU, Qwen2.5-0.5B-Instruct is cached; no GPU on the box).**
+
+- *Meter calibration.* Random sparse deltas (sizes 1e3–1e6 weights, several scales) and targeted deltas (delete one
+  direction from an MLP down-projection, scale one attention output) applied to the 0.5B model; for each, record the
+  relative Frobenius change, the per-layer output change on a 64-prompt calibration batch, the mean per-token KL from
+  base on a 100-prompt probe, and a crude task score (exact match on 100 GSM8K-style items, plus the loop rate). The
+  question is which meter tracks KL and the score; the expectation is that Frobenius does not and output change does.
+  An hour on 16 cores.
+- *Plumbing.* Delta log, apply, rollback, reload: a round trip is byte-identical to the base checkpoint; a refused
+  commit leaves the loaded weights untouched. Pure unit tests, seconds.
+- *Activation message probe.* Same model both sides: take layer-L residuals over a 4-token span, write them over
+  placeholder positions in a second prompt at the same layer, and compare the next-token distribution with the
+  `text` control (the span as words) and `random`. Logit lens on the placeholder positions above L. Minutes on CPU.
+  If `text` and the real arm are indistinguishable at every L, the channel carries nothing beyond the words.
 
 **Ladder of experiments, cheapest and most informative first.**
 
