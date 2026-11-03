@@ -113,6 +113,25 @@ choice to make before building, and an experiment in itself: do agents compress 
 read? A reproduction of their Table 1 on our model (capacity in tokens for Qwen2.5-0.5B, PG-19 and random words) is
 the first run; their code is the reference for the optimisation recipe.
 
+**Refinement (3 Nov, after the first vector-message run).** The channel the harness should provide is: the kernel
+takes a message (text the sender wrote, or the sender's context) and an optimiser produces k vectors that are
+*injected into the receiver's residual stream* at a layer `to_layer`, at placeholder positions, so that the receiver
+can act on them; the optimiser is the tool, because current models cannot do this themselves. Two objectives, to be
+measured separately: *reconstruction* (the receiver can decode the message back to text; the paper's loss) and *use*
+(the receiver answers questions about the message correctly with the vectors in place and no decoding step; the
+cross-entropy of the right answers). The first vector-message run (`docs/experiments/2026-11-03-vector-messages.md`)
+shows that reconstruction-trained vectors at the input layer are decodable but not readable in place. The second run
+crosses `to_layer` ∈ {0, 4, 8, 12} with the objective ∈ {reconstruct, use, both} on short messages. Outcomes:
+
+- use-trained vectors readable in place at some layer: the channel is real on frozen models, and the per-message
+  optimiser (seconds on CPU for a short note; a fraction of a second on a GPU) is the harness tool;
+- not readable at any layer: reading in place needs trained weights. That is the GPU stage, in order: a receiver
+  adapter (a small projection at `to_layer`) trained on vector-to-answer pairs; then a sender encoder that maps text
+  to vectors without per-message optimisation; then both under a communication reward in the joint environment,
+  with the base-policy divergence constraints of section 3 applied to the adapters.
+
+Either way the limit accounting (`count=decoded` or `count=vectors`) is decided before the channel enters a world.
+
 **Why this beats pre-specified vectors.** No vocabulary is fixed in advance; the message is whatever the sender's
 model computes, at the depth the sender chose. Cost is one extra prefill per message.
 
