@@ -159,6 +159,8 @@ The defaults are in `siamlm/configs/siamlm.yaml` (comments there too). Provider 
 | `reasoning_in_context` | `false` | the provider's returned reasoning is written into the context before the reply |
 | `cross_test` | `none` | external with names: `ring` = agent k runs the tests of agent k+1's item, never its own |
 | `continuity` | `false` | external: one sentence that the context carries over from item to item |
+| `curation_advice` | `""` | non-empty: this sentence is added to the instructions (a prompt-only curation baseline) |
+| `dashboard` | `false` | the status lists every turn with its author, kind, ~tokens and age in rounds; not counted toward the limit under `ctx.count=turns` |
 | `history` | `false` | external: each agent's instructions list its own earlier items (title, accepted or not) |
 | `sharing` | `full` | `full` (anyone may change any turn) \| `readonly_others` (only one's own) \| `separate` (one context per agent) |
 | `relation` | `different` | `different`: each agent its own items \| `same`: every agent the same items |

@@ -347,6 +347,9 @@ class World:
                 self.rounds and self.setup == "external" and not self.open_task and self.cross == "none")):
             raise ValueError("world.after_stream must be leave or stay; stay needs world.rounds, setup=external and no ring")
         self.continuity = bool(w.get("continuity", False))        # external: say the context carries over problems
+        self.advice = str(w.get("curation_advice", "") or "").strip()   # one sentence of curation advice (prompt baseline)
+        self.dashboard = bool(w.get("dashboard", False))          # status: a table of the turns (size, author, kind, age)
+        self.turn_round: dict = {}                                  # turn id -> the round it was added (dashboard ages)
         self.history_list = bool(w.get("history", False))         # external: list one's own earlier problems (control)
         self.out.mkdir(parents=True, exist_ok=True)
         (self.out / "snapshots").mkdir(exist_ok=True)
@@ -393,6 +396,7 @@ class World:
     def logging_calls(self, append):
         def logged(turn, *args, **kw):
             made = append(turn, *args, **kw)
+            self.turn_round[made.id] = self.round
             if made.kind == "call" and made.call:
                 write_jsonl(self.out / "call_turns.jsonl", {"id": made.id, **made.call})
             return made
@@ -561,6 +565,8 @@ class World:
                       else "")
             lines.append(f"The context carries over from problem to problem: it keeps your earlier work{others}; what to "
                          "keep is up to you.")
+        if self.advice:
+            lines.append(self.advice)
         if self.capped:
             lines.append((f"Your working context (the messages after these instructions, except the status at the end) "
                           f"may hold at most "
@@ -639,10 +645,22 @@ class World:
             parts.append(f"notices ~{sizes[None]}")
         return "In the file: " + ", ".join(parts) + " tokens (problem statements included)."
 
+    def turn_table(self, a: Agent) -> str:
+        """world.dashboard: every turn in the context with its size, author, kind and age, as data (after the paper
+        "LLM Agents Are Latent Context Managers", arXiv 2606.30005: the state made visible, nothing advised)."""
+        rows = ["turn | agent | kind | ~tokens | age (rounds)"]
+        for i, t in enumerate(a.file.turns, 1):
+            who = t.agent if t.agent is not None else "-"
+            born = self.turn_round.setdefault(t.id, self.round)   # a rewritten or summary turn: new id, born now
+            rows.append(f"{i} | {who} | {t.kind} | {self.tok(a, t.text)} | {self.round - born}")
+        return "Turns in the context:\n" + "\n".join(rows)
+
     def status(self, a: Agent, size: int, extra: str = "") -> str:
         lines = [a.budget.readout(size, show_limit=self.capped)]
         if not self.alone_view and bool(self.cfg.ctx.get("readout_by_agent", True)):
             lines.append(self.by_agent(a))
+        if self.dashboard:
+            lines.append(self.turn_table(a))
         if self.capped:
             if size > a.budget.target and not self.free(a):
                 lines.append(f"Over the limit: {self.task.work_and} are not carried out until the context is at most "
@@ -1652,7 +1670,7 @@ class World:
                          "solved": sum(1 for c in self.pool_closed if c["how"] == "solved")} if self.setup == "pool" else None),
                "order": self.order, "first_mover": self.first_mover, "schedule": self.schedule, "fixed_rounds": self.rounds,
                "marks": "authors" if self.marks else "none", "cross_test": self.cross,
-               "continuity": self.continuity, "history": self.history_list,
+               "continuity": self.continuity, "curation_advice": self.advice, "dashboard": self.dashboard, "history": self.history_list,
                "awareness": self.awareness, "others_as": self.others_as, "chat_others": self.chat_others,
                "alter_notice": self.alter_notice, "goal": self.goal, "reasoning_in_context": self.reasoning_in_context,
                "team": self.team_score(),

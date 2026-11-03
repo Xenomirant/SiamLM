@@ -178,3 +178,25 @@ def test_counting_only_the_turns_leaves_the_instructions_out(tmp_path):
 def test_turns_counting_needs_a_chat_setup(tmp_path):
     with pytest.raises(ValueError):
         lcb_world(tmp_path, [Scripted(), Scripted()], 1, "world.setup=assigned", "ctx.count=turns")
+
+
+def test_curation_advice_and_dashboard_are_off_by_default_and_opt_in(tmp_path):
+    plain = lcb_world(tmp_path / "p", [Scripted(), Scripted()], 2, "world.rounds=1")
+    plain.run()
+    assert "Turns in the context" not in plain.agents[0].provider.seen[0][-1]["content"]
+    a1 = Scripted([tool("run_tests", code="print(1)"),
+                   tool("edit_context", replace_turns=[{"first": 1, "last": 1, "summary": "summary of my first call"}]),
+                   tool("run_tests", code="print(2)"), tool("submit", code="print('OK')")])
+    w = lcb_world(tmp_path / "d", [a1, Scripted()], 2, "world.rounds=3", "world.dashboard=true",
+                  "world.curation_advice='Keep preferences, commitments, and facts you cannot fetch again.'")
+    w.run()
+    first, later = a1.seen[0], a1.seen[-1]
+    assert "Keep preferences, commitments, and facts you cannot fetch again." in first[0]["content"]
+    assert "Turns in the context:\nturn | agent" in first[-1]["content"]
+    table = later[-1]["content"].split("Turns in the context:\n")[1].split("\n")
+    rows = [r.split(" | ") for r in table[1:] if r and r[0].isdigit()]
+    assert rows and rows[0][0] == "1" and rows[0][1] == "1" and rows[0][2] == "summary" and int(rows[0][3]) > 0
+    assert int(rows[1][4]) >= 1 and int(rows[1][4]) >= int(rows[-1][4])      # the oldest turn aged at least as much
+    assert 1 <= int(rows[0][4]) < int(rows[1][4])                             # a rewritten turn ages from its rewrite
+    doc = json.loads((tmp_path / "d" / "w" / "world.json").read_text())
+    assert doc["dashboard"] is True and doc["curation_advice"].startswith("Keep preferences, commitments,")

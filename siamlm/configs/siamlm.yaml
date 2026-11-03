@@ -50,6 +50,8 @@ world:
   cross_test: none           # external, identity=names: none | ring (agent k runs the tests of agent k+1's problem,
                              # never its own; a reply without a tool call is a message and ends the turn)
   continuity: false          # external: one sentence that the context carries over from problem to problem
+  curation_advice: ""        # non-empty: this sentence is added to the instructions (a prompt baseline for curation)
+  dashboard: false           # true: the status lists every turn with its size, author, kind and age (arXiv 2606.30005)
   history: false             # external: each agent's instructions list its own earlier problems (title, accepted?)
   pool_protect: unsolved     # pool: unsolved (open statements cannot be removed) | none (removing one drops the problem)
   pool_open: 0               # pool: problems open at a time (0 = agents + 1)
