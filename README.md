@@ -18,7 +18,7 @@ harness observed, as single-seed stories.
 - [Capabilities](#capabilities)
 - [Constraints and hyperparameters: what they do to the model](#constraints-and-hyperparameters-what-they-do-to-the-model)
 - Reference: [docs/reference.md](docs/reference.md) (every setting, outputs, analysis tools, sweeps, sandbox),
-  [docs/harbor.md](docs/harbor.md), [docs/capabilities.md](docs/capabilities.md), [docs/steering.md](docs/steering.md)
+  [docs/harbor.md](docs/harbor.md), [docs/capabilities.md](docs/capabilities.md), [docs/steering.md](docs/steering.md) Idea notes for activation-space messages and agent-edited weights: [docs/ideas-weight-space.md](docs/ideas-weight-space.md).
 
 ## Quickstart
 
