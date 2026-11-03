@@ -61,6 +61,32 @@ injected positions at the layers above `to_layer`; whether receivers notice or m
 use it at all, how often, with which layers and strengths, and whether use changes over a world. With `at=self`:
 whether an agent's latent note survives its own wiping better than its text notes did (the S3b result).
 
+**Probe run (3 Nov, `scripts/act_msg_probe.py`, results in `docs/act_msg_qwen05b.json`; Qwen2.5-0.5B, same model
+both sides, CPU, minutes).** Six spans of content (a secret word, a city, a number, a name, "Reply in French only")
+written by the sender inside its own sentence; their layer-L residuals written over same-count placeholders in the
+receiver's prompt at layer L; the receiver's probability of the right answer:
+
+| layer L | 2 | 4 | 8 | 12 | 16 | 20 | `text` control | `random` / `placeholder` |
+|---|---|---|---|---|---|---|---|---|
+| secret word "purple" | 0.64 | 0.72 | 0.68 | 0.22 | 0.04 | 0.01 | 0.48 | 0.00 |
+| password 4471 | 0.95 | 0.99 | 0.99 | 0.79 | 0.03 | 0.03 | 0.86 | ≤0.07 |
+| "Reply in French only" | 0.69 | 0.69 | 0.59 | 0.31 | 0.04 | 0.00 | 0.80 | 0.00 |
+| name "Ingrid" | 0.03 | 0.08 | 0.11 | 0.30 | 0.02 | 0.01 | 0.36 | 0.00 |
+
+- The channel works up to the middle of the model and dies in the top third: at layers 2–8 the receiver reads the
+  content as well as or better than from the words (the early residual is close to the token embeddings, so this is
+  close to sending the words); at 10–14 it still reads part of it; from 16 on nothing, since late residuals at a
+  position encode the next-token prediction, not the content.
+- **But the vectors carry only the words, not the sender's context.** Four spans whose words say nothing and whose
+  sender context says everything ("the meeting place" after "We will meet in Lisbon"; "the secret word" after the
+  word was given; "my name"; "the password"): `real` is indistinguishable from `text` and `none` at every layer
+  (all under 0.03). At 0.5B with 1–2-token spans the sender's residual at the span does not hold the referent in a
+  form the receiver can read at those positions.
+- So, at this scale, an activation message is a compressed way of sending words, plus a layer knob. The claim that
+  it carries "what the sender meant" beyond the words is not supported here; a larger model, longer spans, and
+  `from_layer` ≠ `to_layer` are the untested variants, and the channel to the agent's own future calls (`at=self`)
+  is unaffected by this result since the content is what it writes. Build it only if one of those is the question.
+
 **Why this beats pre-specified vectors.** No vocabulary is fixed in advance; the message is whatever the sender's
 model computes, at the depth the sender chose. Cost is one extra prefill per message.
 
