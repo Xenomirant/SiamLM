@@ -10,6 +10,17 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 torch.set_num_threads(16)
 OUT = sys.argv[1]; N_ITEMS = int(sys.argv[2]) if len(sys.argv) > 2 else 60; MAX_NEW = int(sys.argv[3]) if len(sys.argv) > 3 else 48
 MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+def provenance(argv):
+    """Everything needed to rerun this exactly: versions, the model snapshot, the command, the host."""
+    import platform, subprocess, time, transformers, torch
+    from huggingface_hub import snapshot_download
+    snap = snapshot_download(MODEL, local_files_only=True)
+    return dict(model=MODEL, model_snapshot=snap.rsplit("/", 1)[-1], python=platform.python_version(),
+                torch=torch.__version__, transformers=transformers.__version__, threads=torch.get_num_threads(),
+                dtype="float32", device="cpu", cpu=open("/proc/cpuinfo").read().split("model name")[1].split(":")[1].split("\n")[0].strip(),
+                argv=argv, started=time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                git=subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip())
+
 rng = random.Random(7)
 tok = AutoTokenizer.from_pretrained(MODEL)
 model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.float32).eval()
@@ -129,4 +140,4 @@ for name, k, make in CONDS[1:]:
     W.data.copy_(saved)
     rows.append(dict(cond=name, tensor=k, changed=int((delta != 0).sum()), rel_frob=rel, out_change=oc, kl=k_, acc=acc, loop=loop))
     print(f"{name:40s} changed {rows[-1]['changed']:8d} relF {rel:.4f} outΔ {oc:.3f} KL {k_:.3f} acc {acc:.2f} loop {loop:.2f}  ({time.time()-t0:.0f}s)", flush=True)
-json.dump(rows, open(OUT, "w"), indent=1)
+json.dump(dict(provenance=provenance(sys.argv), n_items=N_ITEMS, max_new=MAX_NEW, items=ITEMS, probe=PROBE, calib=CALIB, rows=rows), open(OUT, "w"), indent=1)

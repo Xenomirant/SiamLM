@@ -61,7 +61,7 @@ injected positions at the layers above `to_layer`; whether receivers notice or m
 use it at all, how often, with which layers and strengths, and whether use changes over a world. With `at=self`:
 whether an agent's latent note survives its own wiping better than its text notes did (the S3b result).
 
-**Probe run (3 Nov, `scripts/act_msg_probe.py`, results in `docs/act_msg_qwen05b.json`; Qwen2.5-0.5B, same model
+**Probe run (3 Nov, `scripts/act_msg_probe.py`, record in `docs/experiments/2026-11-03-activation-message-probe.md`; Qwen2.5-0.5B, same model
 both sides, CPU, minutes).** Six spans of content (a secret word, a city, a number, a name, "Reply in French only")
 written by the sender inside its own sentence; their layer-L residuals written over same-count placeholders in the
 receiver's prompt at layer L; the receiver's probability of the right answer:
@@ -86,6 +86,32 @@ receiver's prompt at layer L; the receiver's probability of the right answer:
   it carries "what the sender meant" beyond the words is not supported here; a larger model, longer spans, and
   `from_layer` ≠ `to_layer` are the untested variants, and the channel to the agent's own future calls (`at=self`)
   is unaffected by this result since the content is what it writes. Build it only if one of those is the question.
+
+**What the capacity literature says (added 3 Nov).** Kuratov, Arkhipov, Bulatov, Burtsev, "Cramming 1568 Tokens
+into a Single Vector and Back Again" (ACL 2025, arXiv:2502.13063; code github.com/yurakuratov/hidden_capacity, no
+licence file at the time of writing): with the LM frozen, a single *optimised* input vector (prompt-tuning per text:
+AdamW, lr 0.01, up to 5,000 steps, early stop at token accuracy 1.0) lets Llama-3.1-8B reproduce 1,568 tokens of
+PG-19 text losslessly; Llama-3.2-1B 512; Pythia-410M 96; capacity grows about linearly with the number of vectors
+(Llama-3.2-1B: 7,168 tokens from 16 vectors). Random word sequences fit about half as many tokens. Their datasets:
+PG-19, 21 post-Oct-2024 AO3 fanfics (to rule out memorisation), random GloVe words, GovReport (64-token geometry
+study). Two points matter for us:
+
+- *The bottleneck in our probe is the encoder, not the vector.* We sent raw residuals and got the words up to
+  mid-depth and no context. Optimised vectors carry hundreds of tokens through a 0.5B–1B model. So a sender that
+  **optimises** its message against a decoder (its own model, or the receiver's run by the kernel as a service: gradient
+  steps on frozen weights are a few seconds per step for 0.5B on this CPU) can send its context, not only its span.
+  The honest description is then "learned compression of text into k vectors", with their numbers as the ceiling.
+- *The vectors are not readable representations.* Their Appendix D: solutions for the same text from different
+  initialisations are far apart (cosine rarely above 0.8, overlapping with other texts), and interpolating between
+  them breaks reconstruction. A receiver reads such a message only by decoding it; there is no "meaning" to probe.
+
+Consequence for the capped-context setting: a k-vector message that decodes to 500 tokens costs k placeholder tokens
+of the limit. That makes the limit gameable through compression, which is an agent action and so allowed by the HARD
+RULE, but it must be a stated constraint: either placeholders are counted at their decoded length (`count=decoded`),
+or at a fixed price per vector (`count=vectors`, the paper's capacity as the exchange rate). Which one is a design
+choice to make before building, and an experiment in itself: do agents compress what they need, or what they do not
+read? A reproduction of their Table 1 on our model (capacity in tokens for Qwen2.5-0.5B, PG-19 and random words) is
+the first run; their code is the reference for the optimisation recipe.
 
 **Why this beats pre-specified vectors.** No vocabulary is fixed in advance; the message is whatever the sender's
 model computes, at the depth the sender chose. Cost is one extra prefill per message.
@@ -168,7 +194,7 @@ They are the weight-space counterparts of the context limit: a constraint whose 
   base on a 100-prompt probe, and a crude task score (exact match on 100 GSM8K-style items, plus the loop rate). The
   question is which meter tracks KL and the score; the expectation is that Frobenius does not and output change does.
   An hour on 16 cores.
-  **Run (3 Nov, `scripts/meter_calib.py`, results in `docs/meter_calib_qwen05b.json`; 60 items, 48 tokens, CPU,
+  **Run (3 Nov, `scripts/meter_calib.py`, record in `docs/experiments/2026-11-03-meter-calibration.md`; 60 items, 48 tokens, CPU,
   11 min).** Spearman rank correlation with the probe KL over 19 edits: relative Frobenius 0.82, relative output
   change 0.94. The targeted edits are where they part: deleting the top output direction of the mid-layer MLP
   down-projection has relative Frobenius 0.06 but output change 0.24 and KL 0.029, the same KL as a random edit of

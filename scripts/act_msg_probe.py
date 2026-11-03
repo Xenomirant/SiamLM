@@ -8,6 +8,17 @@ import json, sys, torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 torch.set_num_threads(16); torch.manual_seed(0)
 MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+def provenance(argv):
+    """Everything needed to rerun this exactly: versions, the model snapshot, the command, the host."""
+    import platform, subprocess, time, transformers, torch
+    from huggingface_hub import snapshot_download
+    snap = snapshot_download(MODEL, local_files_only=True)
+    return dict(model=MODEL, model_snapshot=snap.rsplit("/", 1)[-1], python=platform.python_version(),
+                torch=torch.__version__, transformers=transformers.__version__, threads=torch.get_num_threads(),
+                dtype="float32", device="cpu", cpu=open("/proc/cpuinfo").read().split("model name")[1].split(":")[1].split("\n")[0].strip(),
+                argv=argv, started=time.strftime("%Y-%m-%d %H:%M:%S %Z"),
+                git=subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip())
+
 tok = AutoTokenizer.from_pretrained(MODEL); model = AutoModelForCausalLM.from_pretrained(MODEL, dtype=torch.float32).eval()
 NL = model.config.num_hidden_layers
 PH = " ..."   # placeholder text; its token count is matched to the span's
@@ -79,4 +90,4 @@ for before, span, question, targets in ALL:
                          placeholder=res["placeholder_only"][0], text=base["text"][0], text_top=base["text"][1], none=base["none"][0]))
         print(f"{span[:26]:26s} L={L:2d} n={n} real {res['real'][0]:.3f} ({res['real'][1]!r})  random {res['random'][0]:.3f}  "
               f"placeholder {res['placeholder_only'][0]:.3f}  text {base['text'][0]:.3f} ({base['text'][1]!r})  none {base['none'][0]:.3f}", flush=True)
-json.dump(rows, open(sys.argv[1], "w"), indent=1)
+json.dump(dict(provenance=provenance(sys.argv), cases=CASES, ctx_cases=CTX_CASES, placeholder=PH, rows=rows), open(sys.argv[1], "w"), indent=1)
