@@ -1,0 +1,1172 @@
+{
+ "provenance": {
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "model_snapshot": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "python": "3.12.3",
+  "torch": "2.15.0+cpu",
+  "transformers": "4.57.6",
+  "threads": 16,
+  "dtype": "float32",
+  "device": "cpu",
+  "cpu": "AMD Ryzen 7 9700X 8-Core Processor",
+  "argv": [
+   "scripts/vector_msg_regularised.py",
+   "docs/experiments/2026-11-03-vector-messages-regularised.json",
+   "300",
+   "4",
+   "7",
+   "3"
+  ],
+  "started": "2026-11-03 15:32:23 UTC",
+  "git": "c8d29f3"
+ },
+ "steps": 300,
+ "k": 4,
+ "layer": "7",
+ "lam": 1.0,
+ "rows": [
+  {
+   "message": 0,
+   "variant": "curve",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 511,
+   "lam": 0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    false,
+    false,
+    true,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [
+    {
+     "step": 1,
+     "loss": 4.540229320526123,
+     "train": 0,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 10,
+     "loss": 2.6646504402160645,
+     "train": 0,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 20,
+     "loss": 1.2586861848831177,
+     "train": 1,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 30,
+     "loss": 0.26534268260002136,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 40,
+     "loss": 0.013934461399912834,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 50,
+     "loss": 0.002151230815798044,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 60,
+     "loss": 0.0007893367437645793,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 70,
+     "loss": 0.00035742015461437404,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 80,
+     "loss": 0.00019299901032354683,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 90,
+     "loss": 0.0001235329546034336,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 100,
+     "loss": 7.5514406489674e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 110,
+     "loss": 4.5089276682119817e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 120,
+     "loss": 2.817748645611573e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 130,
+     "loss": 1.7836455299402587e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 140,
+     "loss": 1.119068019761471e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 150,
+     "loss": 6.9439065555343404e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 160,
+     "loss": 4.157412149652373e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 170,
+     "loss": 2.42888518187101e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 180,
+     "loss": 1.4156090628603124e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 190,
+     "loss": 7.74860041019565e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 200,
+     "loss": 4.321335609347443e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 210,
+     "loss": 3.4272665061507723e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 220,
+     "loss": 1.639127589214695e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 230,
+     "loss": 1.639127589214695e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 240,
+     "loss": 8.940696005765858e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 250,
+     "loss": 1.341104365337742e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 260,
+     "loss": 2.9802318834981634e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 270,
+     "loss": 4.470348002882929e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 280,
+     "loss": 4.470348002882929e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 290,
+     "loss": 7.450579886381092e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 300,
+     "loss": 0.0,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    }
+   ],
+   "text": "The password is 5749. The meeting is in Lisbon. The secret colour is purple. The code word for the door is olive-49.",
+   "dist_to_anchor": 1.4873424768447876
+  },
+  {
+   "message": 0,
+   "variant": "many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 854,
+   "lam": 0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    false,
+    false,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 5749. The meeting is in Lisbon. The secret colour is purple. The code word for the door is olive-49.",
+   "dist_to_anchor": 1.541316270828247
+  },
+  {
+   "message": 0,
+   "variant": "anchored",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 217,
+   "lam": 1.0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    false,
+    false,
+    true,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "curve": [],
+   "text": "The password is 5749. The meeting is in Lisbon. The secret colour is purple. The code word for the door is olive-49.",
+   "dist_to_anchor": 0.06631577014923096
+  },
+  {
+   "message": 0,
+   "variant": "anchored+many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 847,
+   "lam": 1.0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 5749. The meeting is in Lisbon. The secret colour is purple. The code word for the door is olive-49.",
+   "dist_to_anchor": 0.14933499693870544
+  },
+  {
+   "message": 1,
+   "variant": "curve",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 665,
+   "lam": 0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [
+    {
+     "step": 1,
+     "loss": 10.392559051513672,
+     "train": 0,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 10,
+     "loss": 7.939398765563965,
+     "train": 0,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 20,
+     "loss": 4.933374881744385,
+     "train": 0,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 30,
+     "loss": 1.936143398284912,
+     "train": 1,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 40,
+     "loss": 0.07460901886224747,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 50,
+     "loss": 0.010508021339774132,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 60,
+     "loss": 0.004460442811250687,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 70,
+     "loss": 0.001370333251543343,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 80,
+     "loss": 0.0006093033589422703,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 90,
+     "loss": 0.0002825079136528075,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 100,
+     "loss": 0.00014908696175552905,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 110,
+     "loss": 8.752464054850861e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 120,
+     "loss": 5.656288340105675e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 130,
+     "loss": 3.84440972993616e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 140,
+     "loss": 2.6553423595032655e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 150,
+     "loss": 1.8507025743019767e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 160,
+     "loss": 1.2755290299537592e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 170,
+     "loss": 8.761832759773824e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 180,
+     "loss": 5.990243153064512e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 190,
+     "loss": 3.874291905958671e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 200,
+     "loss": 2.5033909878402483e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 210,
+     "loss": 1.4901146414558752e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 220,
+     "loss": 8.642668944958132e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 230,
+     "loss": 5.066393100605637e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 240,
+     "loss": 2.6822084464583895e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 250,
+     "loss": 2.3841855067985307e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 260,
+     "loss": 1.4901158351676713e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 270,
+     "loss": 5.9604641222676946e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 280,
+     "loss": 5.9604641222676946e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 290,
+     "loss": 5.9604641222676946e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 300,
+     "loss": 5.9604641222676946e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    }
+   ],
+   "text": "The password is 3134. The meeting is in Perth. The secret colour is amber. The code word for the door is teal-66.",
+   "dist_to_anchor": 1.4993582963943481
+  },
+  {
+   "message": 1,
+   "variant": "many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 848,
+   "lam": 0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    true,
+    false,
+    false,
+    true
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 3134. The meeting is in Perth. The secret colour is amber. The code word for the door is teal-66.",
+   "dist_to_anchor": 1.5526893138885498
+  },
+  {
+   "message": 1,
+   "variant": "anchored",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 212,
+   "lam": 1.0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    true,
+    false,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "curve": [],
+   "text": "The password is 3134. The meeting is in Perth. The secret colour is amber. The code word for the door is teal-66.",
+   "dist_to_anchor": 0.14472661912441254
+  },
+  {
+   "message": 1,
+   "variant": "anchored+many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 850,
+   "lam": 1.0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    true
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 3134. The meeting is in Perth. The secret colour is amber. The code word for the door is teal-66.",
+   "dist_to_anchor": 0.12188766896724701
+  },
+  {
+   "message": 2,
+   "variant": "curve",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 429,
+   "lam": 0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    false,
+    true,
+    true,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [
+    {
+     "step": 1,
+     "loss": 6.804553031921387,
+     "train": 0,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 10,
+     "loss": 4.802145957946777,
+     "train": 0,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 20,
+     "loss": 2.553938150405884,
+     "train": 1,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 30,
+     "loss": 1.0628174543380737,
+     "train": 1,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 40,
+     "loss": 0.11502275615930557,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 50,
+     "loss": 0.013091472908854485,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 60,
+     "loss": 0.004727033898234367,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 70,
+     "loss": 0.0019045898225158453,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 80,
+     "loss": 0.000845327798742801,
+     "train": 2,
+     "held_para": 2,
+     "held_fact": 0
+    },
+    {
+     "step": 90,
+     "loss": 0.0005004669656045735,
+     "train": 2,
+     "held_para": 2,
+     "held_fact": 0
+    },
+    {
+     "step": 100,
+     "loss": 0.00027858547400683165,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 110,
+     "loss": 0.00016169113223440945,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 120,
+     "loss": 9.99905532808043e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 130,
+     "loss": 6.288059375947341e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 140,
+     "loss": 4.015275771962479e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 150,
+     "loss": 2.5490553525742143e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 160,
+     "loss": 1.573548433952965e-05,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 170,
+     "loss": 9.496954589849338e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 180,
+     "loss": 5.602818418992683e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 190,
+     "loss": 3.3775900192267727e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 200,
+     "loss": 2.1258965716697276e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 210,
+     "loss": 1.2516966307885014e-06,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 220,
+     "loss": 8.145964329742128e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 230,
+     "loss": 5.36441632448259e-07,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 240,
+     "loss": 3.5762778338721546e-07,
+     "train": 2,
+     "held_para": 0,
+     "held_fact": 0
+    },
+    {
+     "step": 250,
+     "loss": 3.3775961583160097e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 260,
+     "loss": 9.93410651517479e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 270,
+     "loss": 1.1920926823449918e-07,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 280,
+     "loss": 3.973642748178463e-08,
+     "train": 2,
+     "held_para": 2,
+     "held_fact": 0
+    },
+    {
+     "step": 290,
+     "loss": 9.93410651517479e-08,
+     "train": 2,
+     "held_para": 1,
+     "held_fact": 0
+    },
+    {
+     "step": 300,
+     "loss": 3.973642748178463e-08,
+     "train": 2,
+     "held_para": 2,
+     "held_fact": 0
+    }
+   ],
+   "text": "The password is 1405. The meeting is in Lisbon. The secret colour is purple. The code word for the door is ivory-73.",
+   "dist_to_anchor": 1.5382789373397827
+  },
+  {
+   "message": 2,
+   "variant": "many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 842,
+   "lam": 0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    false,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 1405. The meeting is in Lisbon. The secret colour is purple. The code word for the door is ivory-73.",
+   "dist_to_anchor": 1.5600111484527588
+  },
+  {
+   "message": 2,
+   "variant": "anchored",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 214,
+   "lam": 1.0,
+   "train": [
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    false,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "curve": [],
+   "text": "The password is 1405. The meeting is in Lisbon. The secret colour is purple. The code word for the door is ivory-73.",
+   "dist_to_anchor": 0.09676944464445114
+  },
+  {
+   "message": 2,
+   "variant": "anchored+many",
+   "layer": "7",
+   "k": 4,
+   "steps": 300,
+   "seconds": 842,
+   "lam": 1.0,
+   "train": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+   ],
+   "held_para": [
+    true,
+    true,
+    true,
+    true,
+    false,
+    false
+   ],
+   "held_fact": [
+    false,
+    false,
+    false,
+    false,
+    false
+   ],
+   "anchor_read": null,
+   "curve": [],
+   "text": "The password is 1405. The meeting is in Lisbon. The secret colour is purple. The code word for the door is ivory-73.",
+   "dist_to_anchor": 0.14476493000984192
+  }
+ ]
+}

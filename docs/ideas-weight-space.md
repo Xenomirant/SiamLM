@@ -137,6 +137,13 @@ can sit in the same four vectors without the receiver being able to answer a new
 frozen model the channel is: compressed text that must be decoded, plus baked-in responses. Reading in place is a
 training question for the GPU stage, not a per-message optimisation question.
 
+**Third run** (`docs/experiments/2026-11-03-vector-messages-regularised.md`): not an overfitting-balance problem.
+The held-out curve has no peak; fitting on many paraphrases plus anchoring the vectors to the note's own residuals
+gives 15/18 on unseen paraphrases but 0/45 on a fact the loss never asked about, and the note's real residuals
+mean-pooled into k positions read 2/60 on their own. Compression below one position per token is what breaks
+reading on a frozen receiver; the receiver must be trained to read compressed positions (GPU stage), or the channel
+stays at k = n, which is no cheaper than text.
+
 Either way the limit accounting (`count=decoded` or `count=vectors`) is decided before the channel enters a world.
 
 **Why this beats pre-specified vectors.** No vocabulary is fixed in advance; the message is whatever the sender's
