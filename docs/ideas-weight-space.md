@@ -130,6 +130,13 @@ crosses `to_layer` ∈ {0, 4, 8, 12} with the objective ∈ {reconstruct, use, b
   to vectors without per-message optimisation; then both under a communication reward in the joint environment,
   with the base-policy divergence constraints of section 3 applied to the adapters.
 
+**Outcome of the second run** (`docs/experiments/2026-11-03-vector-messages-inject.md`): the second branch. At every
+layer (embeddings, 3, 7, 11) and objective, reconstruction is lossless, use-trained vectors answer exactly the
+questions they were optimised on (36/36) and no others (0/36), and `both` shows decodable text and trained answers
+can sit in the same four vectors without the receiver being able to answer a new question about that text. So on a
+frozen model the channel is: compressed text that must be decoded, plus baked-in responses. Reading in place is a
+training question for the GPU stage, not a per-message optimisation question.
+
 Either way the limit accounting (`count=decoded` or `count=vectors`) is decided before the channel enters a world.
 
 **Why this beats pre-specified vectors.** No vocabulary is fixed in advance; the message is whatever the sender's
