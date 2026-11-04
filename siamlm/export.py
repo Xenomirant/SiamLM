@@ -169,7 +169,7 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
                         "reply_source": "exit.jsonl", "result": None, "notices": [], "error": e.get("error"),
                         "usage": e.get("usage") or {}, "cost": e.get("cost"), "finish_reason": e.get("finish_reason"),
                         "sampling_seed": (int(logs.doc["seed"]) * 1000003 + k * 7919 + 999983) % (2 ** 31),
-                        "reward": None, "item_passed": None, "message_authors": None})
+                        "reward": None, "item_passed": None, "message_authors": e.get("message_authors")})
     return out
 
 

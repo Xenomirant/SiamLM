@@ -1265,7 +1265,9 @@ class World:
             return
         for a in self.agents:
             p = a.pcfg
-            messages = self.messages(a, self.tokens(a), "", status=False) + [{"role": "user", "content": self.exit_question}]
+            authors: list = []
+            messages = self.messages(a, self.tokens(a), "", status=False, authors=authors) + [{"role": "user", "content": self.exit_question}]
+            authors.append([None])
             seed = (self.seed * 1000003 + a.k * 7919 + 999983) % (2 ** 31)
             tools = self.tools(a)
             resp = a.provider.chat(messages, seed=seed, temperature=p.get("temperature", 0.2), top_p=p.get("top_p", 0.95),
@@ -1282,7 +1284,8 @@ class World:
                 "agent": a.k, "model": a.model, "round": self.round, "question": self.exit_question,
                 "text": resp.text or "", "tools": [c.get("name") for c in resp.tool_calls], "finish_reason": resp.finish_reason,
                 "reasoning_chars": len(resp.internal_reasoning or ""), "usage": usage, "cost": cost, "error": resp.error,
-                "turn_ids": [t.id for t in a.file.turns]})
+                "turn_ids": [t.id for t in a.file.turns],
+                "message_authors": authors if self.cfg.output.get("save_requests", False) else None})
 
     # --- turns ---------------------------------------------------------------------------------------------
     def echo(self, a: Agent, call, words, result, code=None):
