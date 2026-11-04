@@ -55,7 +55,7 @@ from pathlib import Path
 from siamlm.analysis.forks import History, body_of, provider_for, restatus, sample
 from siamlm.context.context import Turn
 from siamlm.analysis.attractors import confession, words
-from siamlm.analysis.events import load, request_name, worlds
+from siamlm.analysis.events import done_keys, load, request_name, worlds
 from siamlm.world import mark
 
 SELF = re.compile(r"\bI (should have|shouldn't have|made (a|an|several|many)|mixed|confused|lost track|submitted (code|programs?|"
@@ -303,6 +303,7 @@ def main(argv=None):
     ap.add_argument("--exit-samples", type=int, default=3)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--fresh", action="store_true", help="discard the earlier output (a rerun otherwise adds only missing rows)")
     ap.add_argument("--partner", action="store_true", help="partner arms (marked / named / partner calls removed)")
     a = ap.parse_args(argv)
     for world in worlds(Path(a.root)):
@@ -317,8 +318,11 @@ def main(argv=None):
             continue
         (world / "analysis").mkdir(exist_ok=True)
         providers = {}
-        with (world / "analysis" / ("partner_forks.jsonl" if a.partner else "confession_forks.jsonl")).open(
-                "a", encoding="utf-8") as fo:
+        target = world / "analysis" / ("partner_forks.jsonl" if a.partner else "confession_forks.jsonl")
+        if a.fresh:
+            target.unlink(missing_ok=True)
+        have = done_keys(target, ("agent", "request", "kind", "arm", "sample"))   # a rerun adds only missing rows
+        with target.open("a", encoding="utf-8") as fo:
             for kind, items, n in (("step", built["steps"], a.samples), ("exit", built["exits"], a.exit_samples)):
                 for it in items:
                     k = it["agent"]
@@ -328,6 +332,8 @@ def main(argv=None):
                     meta = {key: v for key, v in it.items() if key != "arms"}
                     for arm, spec in it["arms"].items():
                         for s in range(n):
+                            if (k, it.get("request"), kind, arm, s) in have:
+                                continue
                             r = sample(prov, pcfg, spec["messages"], tools, seed=a.seed * 1009 + s,
                                        tool_choice="none" if kind == "exit" else "auto")
                             w = reply_words(r)

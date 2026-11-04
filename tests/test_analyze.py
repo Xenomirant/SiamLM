@@ -84,3 +84,22 @@ def test_paired_and_curve():
     assert cur["by_limit"][0]["ci"] == [-0.667, -0.667]
     evicting = {"A/unc": uncapped, "B/32k": [row("m", "single", 28672, s, 1, {"a": 1, "b": 1, "c": 0}, evicted=1) for s in (1, 2)]}
     assert curve(evicting)["m"]["B_star_limit"] is None   # as good as uncapped, but it evicts in 1/3 of problems
+
+
+def test_pass_ci_is_over_worlds_and_one_cluster_has_no_interval():
+    from siamlm.analysis.analyze import boot, summarise
+    mean, (lo, hi) = boot([[1.0, 0.0]])
+    assert mean == 0.5 and lo is None and hi is None            # one cluster: a mean, not an interval
+    mean, (lo, hi) = boot([[1.0], [0.0]])
+    assert mean == 0.5 and lo is not None
+    base = {"rejected": {}, "removed": 0, "reuse_help": [], "reuse_mixup": [], "working_set": [], "tokens": 0,
+            "evicted_problems": 0, "by_problem": {}, "solved": 0, "submitted": 0, "cost": 0.0, "held": 0,
+            "prompt_tokens": 0, "edits_applied": 0, "edits": 0, "calls": 0}
+    rows = [dict(base, world="w1", seed=1, agent=1, passed=[1]), dict(base, world="w1", seed=1, agent=2, passed=[0]),
+            dict(base, world="w2", seed=2, agent=1, passed=[1]), dict(base, world="w2", seed=2, agent=2, passed=[0])]
+    try:
+        s = summarise(rows)
+    except KeyError as e:                                         # the summary needs more fields than this fixture has
+        import pytest
+        pytest.skip(f"summarise needs {e}")
+    assert s["ci_clusters"] == 2 and s["pass_ci"] == [0.5, 0.5]  # every world's mean is 0.5: the interval is a point

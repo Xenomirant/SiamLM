@@ -90,3 +90,31 @@ def test_probes_carry_ground_truth(tmp_path):
     assert "A1R2" in q.split(mine + ":")[1].split("Text")[0]               # the truth is A's original text
     for p in probes:                                                        # the question replaces the status line
         assert p["messages"][:-1] == json.loads((tmp_path / "w" / "requests" / p["request"]).read_text())[:-1]
+
+
+@pytest.mark.parametrize("text, letter", [
+    ("A) yes, it is unchanged", "A"), ("I think the answer is C) no", "C"), ("A message was there before; B) yes", "B"),
+    ("Answer: D", "D"), ("**B** — I changed it", "B"), ("A new message appeared, nothing else.", None),
+    ("I wrote Text B.", "B"), ("(C)", "C"), ("A partner changed it, so the answer is C.", "C"), ("A", "A"),
+    ("B. Someone else removed it.", "B"), ("I cannot tell.", None)])
+def test_answer_letter_ignores_the_article(text, letter):
+    assert forks.answer_letter(text) == letter
+
+
+def test_rerunning_forks_adds_no_duplicate_rows(tmp_path):
+    """forks.py appends to analysis/forks.jsonl and probes.jsonl; a rerun writes only the rows that are missing, and
+    --fresh starts over (the world's provider is the mock, so no network)."""
+    play(tmp_path / "w", True)
+    ev.main([str(tmp_path / "w")])
+    args = [str(tmp_path / "w"), "--forks", "1", "--probes", "--probes-per-agent", "2"]
+    forks.main(args)
+    first = read_jsonl(tmp_path / "w" / "analysis" / "forks.jsonl"), read_jsonl(tmp_path / "w" / "analysis" / "probes.jsonl")
+    assert first[0], "the scripted world has partner edits, so there are forks"
+    forks.main(args)
+    again = read_jsonl(tmp_path / "w" / "analysis" / "forks.jsonl"), read_jsonl(tmp_path / "w" / "analysis" / "probes.jsonl")
+    assert [len(x) for x in again] == [len(x) for x in first]
+    keys = [(r["agent"], r["request"], r["arm"], r["sample"]) for r in again[0]]
+    assert len(keys) == len(set(keys))
+    forks.main(args + ["--fresh"])
+    fresh = read_jsonl(tmp_path / "w" / "analysis" / "forks.jsonl"), read_jsonl(tmp_path / "w" / "analysis" / "probes.jsonl")
+    assert [len(x) for x in fresh] == [len(x) for x in first]

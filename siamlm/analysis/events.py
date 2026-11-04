@@ -30,6 +30,11 @@ def load(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.open(encoding="utf-8")] if path.exists() else []
 
 
+def done_keys(path: Path, fields: tuple) -> set:
+    """The keys (tuples of `fields`) of the rows already in a JSONL output, so a rerun adds only what is missing."""
+    return {tuple(r.get(f) for f in fields) for r in load(path)}
+
+
 def worlds(root: Path) -> list[Path]:
     root = Path(root)
     if (root / "world.json").exists():

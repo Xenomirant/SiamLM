@@ -37,7 +37,7 @@ from pathlib import Path
 
 
 from siamlm.context.context import Turn
-from siamlm.analysis.events import load, request_name, versions_for, worlds
+from siamlm.analysis.events import done_keys, load, request_name, versions_for, worlds
 from siamlm.world import chat_chars, chat_messages, mark
 
 CHANGED = ("Before you continue, one question about your context. Look at message {i} (it begins: \"{quote}\"). Is "
@@ -301,8 +301,19 @@ def sample(provider, pcfg, messages, tools, seed: int, tool_choice="auto") -> di
 
 
 def answer_letter(text: str) -> str | None:
-    m = re.search(r"\b([ABCD])\b", text or "")
-    return m.group(1) if m else None
+    """The letter a probe reply chose. A letter that opens the reply ("B", "(C)", "**D**: ...", "A."), a bracketed
+    or marked letter anywhere ("(B)", "B)"), or "answer: X" / "answer is X"; else a bare letter that is not the
+    article "A" (an "A" followed by a lowercase word is prose). None when nothing qualifies: before 4 Nov 2026 the
+    rule was the first standalone A-D, which read the article in "A partner changed it" as the answer A."""
+    t = (text or "").strip()
+    m = re.match(r"(?:\*\*|\()?([ABCD])(?:\)|\.|:|\*\*|\s*[-\u2014]|\s*$)", t)
+    if m:
+        return m.group(1)
+    m = re.search(r"\(([ABCD])\)|\b([ABCD])\)|answer(?: is|:)\s*\(?\*{0,2}([ABCD])\b", t, re.I)
+    if m:
+        return next(g for g in m.groups() if g).upper()
+    m = re.search(r"\b([BCD])\b|\b(A)\b(?!\s+[a-z])", t)
+    return next(g for g in m.groups() if g) if m else None
 
 
 def main(argv=None):
@@ -313,6 +324,8 @@ def main(argv=None):
     ap.add_argument("--probes", action="store_true")
     ap.add_argument("--max-calls", type=int, default=10, help="event calls per agent and kind (partner / self)")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--fresh", action="store_true", help="discard earlier forks.jsonl / probes.jsonl (a rerun otherwise "
+                                                          "adds only the rows that are missing)")
     ap.add_argument("--probes-per-agent", type=int, default=0, help="at most this many probes per agent and world, "
                     "spread over the kinds (0 = all)")
     ap.add_argument("--under-limit", action="store_true", help="only fork pairs whose counterfactual is not over the "
@@ -337,6 +350,10 @@ def main(argv=None):
                                                     encoding="utf-8")
             continue
         providers = {}
+        if args.fresh:
+            for name in ("forks.jsonl", "probes.jsonl"):
+                (out / name).unlink(missing_ok=True)
+        have = done_keys(out / "forks.jsonl", ("agent", "request", "arm", "sample"))   # a rerun adds only missing rows
         with (out / "forks.jsonl").open("a", encoding="utf-8") as fo:
             for f in built["forks"]:
                 k = f["agent"]
@@ -346,13 +363,18 @@ def main(argv=None):
                 meta = {key: v for key, v in f.items() if key not in ("actual", "counterfactual")}
                 for arm in ("actual", "counterfactual"):
                     for s in range(args.forks):
+                        if (k, f["request"], arm, s) in have:
+                            continue
                         r = sample(prov, pcfg, f[arm], tools, seed=args.seed * 1009 + s)
                         fo.write(json.dumps(dict(meta, arm=arm, sample=s, **r), ensure_ascii=False) + "\n")
                         fo.flush()
         if args.probes:
+            have = done_keys(out / "probes.jsonl", ("agent", "request", "probe", "about", "turn_id"))
             with (out / "probes.jsonl").open("a", encoding="utf-8") as fo:
                 for p in built["probes"]:
                     k = p["agent"]
+                    if (k, p["request"], p["probe"], p["about"], p.get("turn_id")) in have:
+                        continue
                     providers.setdefault(k, provider_for(doc, k))
                     pcfg, prov = providers[k]
                     tools = json.loads((world / "requests" / f"tools_a{k}.json").read_text(encoding="utf-8"))

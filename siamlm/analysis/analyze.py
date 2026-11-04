@@ -39,10 +39,13 @@ def jsonl(path: Path) -> list[dict]:
 
 
 def boot(values_by_cluster: list[list[float]], n=2000, seed=0):
-    """Percentile 95 % interval of the pooled mean, resampling clusters."""
+    """Percentile 95 % interval of the pooled mean, resampling clusters (worlds, or seeds). With fewer than two
+    clusters the interval is undefined and comes back as (None, None): one seed per cell gives a mean, not a CI."""
     flat = [v for c in values_by_cluster for v in c]
     if not flat:
         return None, (None, None)
+    if len(values_by_cluster) < 2:
+        return sum(flat) / len(flat), (None, None)
     rng, means = random.Random(seed), []
     for _ in range(n):
         pick = [v for _ in values_by_cluster for v in rng.choice(values_by_cluster)]
@@ -201,7 +204,8 @@ def q(xs, p):
 def summarise(rows: list[dict]) -> dict:
     mean = lambda xs: round(st.mean(xs), 3) if xs else None
     med = lambda xs: round(st.median(xs)) if xs else None
-    rate, (lo, hi) = boot([r["passed"] for r in rows])
+    clusters = sorted({r["world"] for r in rows})                   # the CI resamples worlds, not agent rows
+    rate, (lo, hi) = boot([[v for r in rows if r["world"] == w for v in r["passed"]] for w in clusters])
     allv = lambda key: [v for r in rows for v in r[key]]
     rejected = defaultdict(int)
     for r in rows:
@@ -212,6 +216,7 @@ def summarise(rows: list[dict]) -> dict:
     help_, mix = allv("reuse_help"), allv("reuse_mixup")
     return {"worlds": len({r["world"] for r in rows}), "agents": len(rows), "problems": len(allv("passed")), "solved": solved,
             "pass_rate": round(rate, 3) if rate is not None else None, "pass_ci": [round(lo, 3), round(hi, 3)] if lo is not None else None,
+            "ci_clusters": len(clusters),
             "work_calls_mean": mean(allv("work_calls")),
             "working_set_median": med(allv("working_set")), "working_set_p75": q(allv("working_set"), .75),
             "working_set_p90": q(allv("working_set"), .9),
@@ -252,8 +257,9 @@ def paired(cells: dict) -> dict:
                 for key in common:
                     per_seed[key[0]].append(cs[a][key] - cs[b][key])
                 d, (lo, hi) = boot(list(per_seed.values()))
-                out[f"{model} | {a} - {b}"] = {"problems": len(common), "diff": round(d, 3),
-                                               "ci": [round(lo, 3), round(hi, 3)], "a_solved": sum(cs[a][k] for k in common),
+                out[f"{model} | {a} - {b}"] = {"problems": len(common), "seeds": len(per_seed), "diff": round(d, 3),
+                                               "ci": None if lo is None else [round(lo, 3), round(hi, 3)],
+                                               "a_solved": sum(cs[a][k] for k in common),
                                                "b_solved": sum(cs[b][k] for k in common)}
     return out
 
@@ -286,7 +292,8 @@ def curve(cells: dict) -> dict:
                 for key in common:
                     per_seed[key[0]].append(got[key] - ref[key])
                 diff, ci = boot(list(per_seed.values()))
-            rows.append({"limit": lim, "problems": len(common), "solved": solved, "uncapped_solved": ref_solved,
+            rows.append({"limit": lim, "problems": len(common), "seeds": len({k[0] for k in common}), "solved": solved,
+                         "uncapped_solved": ref_solved,
                          "diff_vs_uncapped": None if diff is None else round(diff, 3),
                          "ci": None if ci[0] is None else [round(ci[0], 3), round(ci[1], 3)],
                          "evicted_problem_frac": round(frac, 3)})
@@ -321,13 +328,13 @@ def main(argv=None):
     out = Path(a.out) if a.out else Path(a.batches[0])
     out.mkdir(parents=True, exist_ok=True)
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
-    cols = ["problems", "solved", "pass_rate", "pass_ci", "working_set_median", "working_set_p90", "tokens_per_solved",
+    cols = ["problems", "solved", "pass_rate", "pass_ci", "ci_clusters", "working_set_median", "working_set_p90", "tokens_per_solved",
             "share_mean", "removed_others_frac", "summaries_of_others", "for_partner_programs", "reuse_help", "reuse_mixup",
             "held", "evictions", "truncated", "text_removed", "cost", "cost_per_problem"]
     (out / "summary.md").write_text(table(summary, cols))
     pair = paired(cells)
     (out / "paired.json").write_text(json.dumps(pair, indent=2))
-    (out / "paired.md").write_text(table(pair, ["problems", "a_solved", "b_solved", "diff", "ci"]))
+    (out / "paired.md").write_text(table(pair, ["problems", "seeds", "a_solved", "b_solved", "diff", "ci"]))
     print(table(summary, cols))
     if a.curve:
         cur = curve(cells)
@@ -335,7 +342,7 @@ def main(argv=None):
         lines = []
         for model, c in cur.items():
             lines.append(f"## {model}  (B* limit: {c['B_star_limit']})\n")
-            lines.append(table({str(r["limit"]): r for r in c["by_limit"]}, ["problems", "solved", "uncapped_solved", "diff_vs_uncapped", "ci", "evicted_problem_frac"]))
+            lines.append(table({str(r["limit"]): r for r in c["by_limit"]}, ["problems", "seeds", "solved", "uncapped_solved", "diff_vs_uncapped", "ci", "evicted_problem_frac"]))
         (out / "curve.md").write_text("\n".join(lines))
         print("\n".join(lines))
 
