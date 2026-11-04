@@ -22,6 +22,7 @@ from .base import ProviderResponse
 _MODELS: dict = {}
 _LOCK = threading.Lock()
 CALL = re.compile(r"<tool_call>\s*(.*?)\s*</tool_call>", re.S)
+BARE = re.compile(r"(\{\s*\"name\"\s*:\s*\"[^\"]+\"\s*,\s*\"(?:parameters|arguments)\"\s*:.*)$", re.S)   # Llama 3 tool-call format
 THINK = re.compile(r"<think>(.*?)</think>", re.S)
 CALIBRATION = "Tell me a little about how you approach a new task."
 
@@ -119,6 +120,26 @@ def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
         calls.append(call)
         return ""
     text = CALL.sub(take, raw).strip()
+    if not calls:                                   # Llama 3.x writes a bare JSON object: {"name": ..., "parameters": {...}}
+        m = BARE.search(text)
+        if m:
+            obj = None
+            try:
+                obj = json.loads(m.group(1))
+            except json.JSONDecodeError:
+                fixed = balance(m.group(1))
+                obj = json.loads(fixed) if fixed else None
+            if isinstance(obj, dict) and isinstance(obj.get("name"), str) and ("parameters" in obj or "arguments" in obj):
+                args = obj.get("arguments") if "arguments" in obj else obj.get("parameters")
+                args = args if isinstance(args, dict) else {}
+                for k, v in list(args.items()):     # Llama often JSON-encodes a list or object argument as a string
+                    if isinstance(v, str) and v[:1] in "[{":
+                        try:
+                            args[k] = json.loads(v)
+                        except json.JSONDecodeError:
+                            pass
+                calls.append({"id": "hf_0", "name": obj["name"], "arguments": args, "format": "bare_json"})
+                text = (text[:m.start()] + text[m.end():]).strip()
     return text, calls, reasoning
 
 

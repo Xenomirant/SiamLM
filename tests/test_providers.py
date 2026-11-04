@@ -124,3 +124,14 @@ def test_hf_repairs_a_tool_call_missing_its_closing_brackets():
                 '<tool_call>{"name": "submit", "arguments": {"a": {"b": {"c": {"d": 1</tool_call>'):
         text, calls, _ = parse_reply(bad)
         assert not calls and "<tool_call>" in text
+
+
+def test_hf_reads_llama_style_bare_json_tool_calls():
+    from siamlm.providers.hf import parse_reply
+    raw = '[agent 1]: {"name": "edit_context", "parameters": {"replace_turns": "[{\\"first\\": 1, \\"last\\": 1, \\"summary\\": \\"New turn\\"}]"}}'
+    text, calls, _ = parse_reply(raw)
+    assert calls and calls[0]["name"] == "edit_context" and calls[0]["format"] == "bare_json"
+    assert calls[0]["arguments"] == {"replace_turns": [{"first": 1, "last": 1, "summary": "New turn"}]}
+    assert text == "[agent 1]:"
+    text, calls, _ = parse_reply('Just a message with {"name": "x"} in it and no parameters')
+    assert not calls
