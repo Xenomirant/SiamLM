@@ -67,8 +67,10 @@ An agent is three things; the world assembles them for every call (every call is
 
 - **a backend** (the policy; `provider.*`, per agent with `world.agent_providers`): `mock`; `openrouter`; `openai`
   (any OpenAI-compatible endpoint: OpenAI, a gateway, or a vLLM / SGLang server of the policy you are training);
-  `hf` (a local Hugging Face model through plain transformers; `provider.cache=prefix|span` reuses the KV cache
-  across an agent's calls, span-wise after Context Language Models' Suffix Cache Reuse); or your own class.
+  `hf` (a local Hugging Face model through plain transformers; the KV cache of the unchanged prefix is reused across
+  an agent's calls by default, exactly; `provider.cache=span` also keeps survivors of an edit, with their stale
+  states, after Context Language Models' Suffix Cache Reuse: not for wiping studies, a tool for leftover traces);
+  or your own class.
 - **tools**: the world's context-editing tool (`edit_context`, or `bash` on `/ctx/context.txt` with
   `ctx.edit=bash`), the environment's work calls (e.g. `run_tests`, `submit`), and optional
   [capabilities](#capabilities) (all off by default).

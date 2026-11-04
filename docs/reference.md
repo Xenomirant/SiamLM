@@ -249,15 +249,21 @@ Providers (model backends, `siamlm/configs/provider/`):
 
 Every request is rebuilt from the shared context, so consecutive prompts of one agent differ only where the context
 changed since its last call (the status line, new turns, edits in the middle). `provider.cache` on the `hf` backend
-(`siamlm/providers/kvcache.py`; default `none`, behaviour unchanged):
+(`siamlm/providers/kvcache.py`; default `prefix`):
 
-- `prefix`: the longest common prefix with the agent's previous prompt keeps its cached keys and values; the rest is
-  prefilled. Exact.
+- `prefix` (default): the longest common prefix with the agent's previous prompt keeps its cached keys and values;
+  the rest is prefilled. Exact: the same request, the same states (up to floating-point order). `none` prefills
+  the whole prompt every call; it is an opt-out for memory (one cache per agent stays resident between calls) or
+  debugging, and what unsupported models and steered agents fall back to.
 - `span`: Suffix Cache Reuse, after Context Language Models (ideas only): the new prompt is diffed against the
   previous one at the token level; every surviving span keeps its cache, moved to its new position (the keys'
   rotary encoding re-rotated by the position delta), and only inserted tokens are prefilled, each new span against
-  the cache of what precedes it. Survivors carry states computed under the old prefix: an approximation that CLM
-  reports as harmless to slightly helpful (a regulariser). `cache_min_span` (16) and `cache_max_spans` (6) bound it.
+  the cache of what precedes it. Survivors carry states computed under the old prefix, that is, while the deleted
+  or rewritten text was still there: **a wiped turn keeps influencing the model through them, so the context file
+  is no longer the only state.** That rules `span` out for the wiping and state-binding studies (a value's survival
+  after a wipe, what a partner's deletion did to an agent) and makes it the tool for the opposite question, whether
+  an agent is sensitive to leftover traces of what was removed; CLM reports the approximation as harmless to
+  slightly helpful for task accuracy (a regulariser). `cache_min_span` (16) and `cache_max_spans` (6) bound it.
 
 Each call reports `cache_mode`, `cache_prompt`, `cache_reused`, `cache_relocated`, `cache_prefilled` in its `usage`
 (`calls.jsonl`); `scripts/cache_reuse_report.py <batch>` tabulates them with latencies. Steering switches reuse off

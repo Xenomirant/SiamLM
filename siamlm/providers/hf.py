@@ -146,7 +146,7 @@ def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
 class HFProvider:
     name = "hf"
 
-    def __init__(self, model: str, device: str = "cpu", dtype: str = "float32", steer=None, cache: str = "none",
+    def __init__(self, model: str, device: str = "cpu", dtype: str = "float32", steer=None, cache: str = "prefix",
                  cache_min_span: int = 16, cache_max_spans: int = 6, **_: object):
         self.model, self.device = model, device
         self.lm, self.tokenizer, self.lock = load_model(model, device, dtype)

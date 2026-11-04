@@ -9,11 +9,17 @@ temperature: 0.7
 top_p: 0.9
 timeout: 600
 max_retries: 0
-cache: none          # KV-cache reuse across this agent's calls (siamlm/providers/kvcache.py): none (prefill the whole
-                     # prompt every call) | prefix (the longest common prefix with the previous prompt keeps its cache;
-                     # exact) | span (Suffix Cache Reuse after Context Language Models: every surviving span keeps its
-                     # cache, moved to its new position; only inserted tokens are prefilled; survivors carry states
-                     # computed under the old prefix: an approximation). Each call reports cache_* in its usage
+cache: prefix        # KV-cache reuse across this agent's calls (siamlm/providers/kvcache.py).
+                     # prefix (default): the longest common prefix with the previous prompt keeps its cache; exact, the
+                     #   same request and the same states. none: prefill the whole prompt every call (an opt-out: no
+                     #   cache resident per agent, for memory or debugging; unsupported models and steering fall back
+                     #   to it by themselves).
+                     # span: Suffix Cache Reuse after Context Language Models: every surviving span keeps its cache,
+                     #   moved to its new position; only inserted tokens are prefilled. SURVIVORS CARRY STATES COMPUTED
+                     #   WHILE THE DELETED OR REWRITTEN TEXT WAS STILL THERE: a wiped turn keeps influencing the model
+                     #   through them, so the context file is no longer the only state. Not for the wiping and
+                     #   state-binding studies; a tool for the question of leftover traces (and for throughput).
+                     # Each call reports cache_* in its usage
 cache_min_span: 16   # span: survivors shorter than this are prefilled
 cache_max_spans: 6   # span: at most this many survivors relocated per call (the longest first)
 # steer: EXPERIMENTAL (siamlm/capabilities/steer.py, docs/steering.md; pip install "siamlm[steer]"). The vectors'
