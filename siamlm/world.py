@@ -48,6 +48,7 @@ import json
 import math
 import random
 import re
+import sys
 import tarfile
 import threading
 import time
@@ -370,6 +371,14 @@ class World:
                              "and schedule=rounds")
         self.exit_question = str(w.get("exit_question") or "")
         self.evicts = bool(w.get("evict", True))                  # false: the harness never removes turns
+        self.warnings: list[str] = []
+        if self.evicts and self.capped:                           # the shipped default, kept for byte identity with the
+            msg = ("world.evict=true: after world.max_held held calls the harness itself removes the oldest turns, "   # earlier
+                   "while the instructions tell the model that nothing is removed unless it removes it; a run then "  # runs
+                   "measures the harness's eviction, not the agents' curation. The study configuration is "
+                   "+design=study (world.evict=false world.end_over_limit=3 ctx.count=turns).")
+            self.warnings.append(msg)
+            print("warning: " + msg, file=sys.stderr)
         self.end_over_limit = int(w.get("end_over_limit") or 0)  # > 0: that many holds in a row end the session
         if self.end_over_limit and (self.evicts or not self.capped):
             raise ValueError("world.end_over_limit needs world.evict=false and a capped context")
@@ -1739,7 +1748,7 @@ class World:
                "relation": str(self.cfg.world.relation), "capped": self.capped,
                "budget_tokens": int(self.cfg.ctx.budget_tokens), "limit": self.agents[0].budget.target,
                "tokenizer": self.agents[0].budget.tokenizer, "grader_image": getattr(self.task, "image_id", None), "task": self.task.name,
-               "seconds": round(time.time() - self.started, 1),
+               "seconds": round(time.time() - self.started, 1), "warnings": self.warnings,
                "agents": [{"agent": a.k, "model": a.model, "problems": [p["id"] for p in a.stream], "done": a.done,
                            "end_reason": a.end_reason, "chars_per_token": round(a.cpt, 3), **a.stats} for a in self.agents],
                "config": OmegaConf.to_container(self.cfg, resolve=True)}

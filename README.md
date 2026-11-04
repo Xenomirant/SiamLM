@@ -212,7 +212,8 @@ default the harness itself removes the oldest turns after `world.max_held` holds
 harness's eviction, not the agents' curation (and the project's own rule is that the harness never shortens a
 context). The defaults are kept for byte-identity with the earlier runs; the study configuration is
 `world.evict=false world.end_over_limit=3 ctx.count=turns` (what the table above describes), and every design in
-`siamlm/sweep.py` sets it.
+`siamlm/sweep.py` sets it. `+design=study` on the command line sets it too (`siamlm/configs/design/study.yaml`), and a
+run under the default prints a warning at start-up and records it in `world.json` (`warnings`).
 
 The study designs (`python -m siamlm.sweep --design ... --dry-run`) set the configuration the table describes.
 

@@ -57,3 +57,20 @@ def test_every_sweep_cell_composes(design, tmp_path):
     for name, over in cells:
         cfg = runner.compose(["provider=openrouter", "ctx.edit=bash", *over])
         assert cfg.world.setup == "external" and cfg.ctx.count == "turns" and cfg.world.end_over_limit == 3, name
+
+
+def test_the_study_preset_composes_and_the_default_is_warned_about(tmp_path, capsys):
+    from omegaconf import OmegaConf
+    from helpers import FakeGrader, Scripted, factory, problem
+    from siamlm.world import World
+    cfg = runner.compose(["+design=study"])
+    assert (cfg.world.evict, cfg.world.end_over_limit, cfg.ctx.count, cfg.world.setup) == (False, 3, "turns", "external")
+    assert runner.compose([]).world.evict is True
+    for overrides, warned in ((["world.n_agents=1"], True), (["world.n_agents=1", "world.evict=false"], False)):
+        cfg = runner.compose(overrides)
+        OmegaConf.set_struct(cfg, False)
+        out = tmp_path / ("warned" if warned else "quiet")
+        World(cfg, 1, [[problem(1)]], out, FakeGrader(), factory(Scripted()), label="t").run()
+        doc = json.loads((out / "world.json").read_text())
+        assert bool(doc["warnings"]) is warned
+        assert ("world.evict=true" in capsys.readouterr().err) is warned

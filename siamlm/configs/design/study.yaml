@@ -1,0 +1,10 @@
+# @package _global_
+# The study configuration (README "Constraints and hyperparameters"; every design in siamlm/sweep.py sets it):
+# the harness never removes turns, N held calls in a row end a session, and only the working context counts.
+#     python -m siamlm.run +design=study task.name=open world.identity=names ...
+world:
+  setup: external
+  evict: false
+  end_over_limit: 3
+ctx:
+  count: turns
