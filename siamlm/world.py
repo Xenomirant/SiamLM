@@ -1040,6 +1040,8 @@ class World:
         call = resp.tool_calls[0]
         name, args = call.get("name"), call.get("arguments") or {}
         more = " (only the first of your tool calls was carried out)" if len(resp.tool_calls) > 1 else ""
+        if call.get("repaired"):                        # hf backend: closing brackets the model left out were added
+            a.stats["repaired_calls"] = a.stats.get("repaired_calls", 0) + 1
         if call.get("arguments_error"):                 # unreadable arguments (a reply cut off mid-call, bad JSON):
             a.stats["malformed"] = a.stats.get("malformed", 0) + 1   # said once in the context, nothing carried out
             if words:

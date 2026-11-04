@@ -107,3 +107,20 @@ def test_unreadable_tool_arguments_are_flagged_not_emptied():
     assert bad[0]["arguments"] == {} and "not an object" in bad[0]["arguments_error"]
     ok = parse_tool_calls([{"id": "z", "function": {"name": "submit", "arguments": '{"code": "print(1)"}'}}])
     assert ok[0]["arguments"] == {"code": "print(1)"} and "arguments_error" not in ok[0]
+
+
+def test_hf_repairs_a_tool_call_missing_its_closing_brackets():
+    from siamlm.providers.hf import parse_reply
+    raw = ('<tool_call>\n{"name": "edit_context", "arguments": {"replace_turns": [{"first": 1, "last": 1, '
+           '"summary": "Agent 1: Let\'s go!"}]}\n</tool_call>')          # one } short, as Qwen2.5-3B writes it
+    text, calls, _ = parse_reply(raw)
+    assert text == "" and calls and calls[0]["name"] == "edit_context" and calls[0]["repaired"] is True
+    assert calls[0]["arguments"]["replace_turns"][0]["summary"] == "Agent 1: Let's go!"
+    ok = parse_reply('<tool_call>{"name": "submit", "arguments": {"code": "x"}}</tool_call>')[1][0]
+    assert "repaired" not in ok
+    # not repaired: a bracket inside a string, a mismatched bracket, or more than three missing
+    for bad in ('<tool_call>{"name": "submit", "arguments": {"code": "print(\'{\')</tool_call>',
+                '<tool_call>{"name": "submit", "arguments": [1}</tool_call>',
+                '<tool_call>{"name": "submit", "arguments": {"a": {"b": {"c": {"d": 1</tool_call>'):
+        text, calls, _ = parse_reply(bad)
+        assert not calls and "<tool_call>" in text

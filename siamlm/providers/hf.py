@@ -62,22 +62,61 @@ def hf_messages(messages: list[dict]) -> list[dict]:
     return out
 
 
+def balance(text: str) -> str | None:
+    """A JSON object whose closing brackets were cut short at the end (small instruct models often emit one `}` too
+    few before </tool_call>): the same text with the missing `]` / `}` appended, if at most three are missing and
+    the result parses; else None."""
+    stack, in_str, esc = [], False, False
+    for ch in text:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not stack or stack[-1] != ch:
+                return None
+            stack.pop()
+    if in_str or not stack or len(stack) > 3:
+        return None
+    fixed = text + "".join(reversed(stack))
+    try:
+        json.loads(fixed)
+    except json.JSONDecodeError:
+        return None
+    return fixed
+
+
 def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
     """(text, tool calls, reasoning) from a generated reply. A <tool_call> block that is not valid JSON with a name
-    stays in the text."""
+    stays in the text, except for one whose only fault is up to three missing closing brackets at the end: that one
+    is repaired and the call carries "repaired": true (logged by the world as stats repaired_calls)."""
     reasoning = "\n".join(t.strip() for t in THINK.findall(raw)).strip() or None
     raw = THINK.sub("", raw)
     calls = []
 
     def take(match):
+        repaired = False
         try:
             obj = json.loads(match.group(1))
         except json.JSONDecodeError:
-            return match.group(0)
+            fixed = balance(match.group(1).strip())
+            if fixed is None:
+                return match.group(0)
+            obj, repaired = json.loads(fixed), True
         if not isinstance(obj, dict) or not isinstance(obj.get("name"), str):
             return match.group(0)
         args = obj.get("arguments") or {}
-        calls.append({"id": f"hf_{len(calls)}", "name": obj["name"], "arguments": args if isinstance(args, dict) else {}})
+        call = {"id": f"hf_{len(calls)}", "name": obj["name"], "arguments": args if isinstance(args, dict) else {}}
+        if repaired:
+            call["repaired"] = True
+        calls.append(call)
         return ""
     text = CALL.sub(take, raw).strip()
     return text, calls, reasoning
