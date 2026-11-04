@@ -125,6 +125,17 @@ everything about the context. `task.name`:
 
 A new benchmark is a new `Task` subclass in `siamlm/tasks/`, added to `build_task` in `siamlm/run.py`.
 
+### Running without Docker (`ctx.bash.backend=local`)
+
+`siamlm/context/localbox.py`: each bash command runs in a fresh user+mount+pid+network namespace of the host entered
+as `nobody`, with tmpfs at the real `/ctx`, `/work` and `/tmp`, no network, a time limit and every process killed at
+the end; the agent's files persist between commands in a host folder. The host filesystem stays visible (read-only
+where world-readable) and there is no `/proc` inside, so it is for local, offline models only; the world warns at
+start-up. `scripts/setup_env.sh` chooses: Docker when the container can run it, else this. A container cannot run
+Docker (daemon, rootless, or Podman) without `CAP_SYS_ADMIN` and mounts, a writable cgroup root and `/dev/fuse`, or a
+mounted host `/var/run/docker.sock`; that is a property of how the container is started (`--privileged`, or
+`--cap-add SYS_ADMIN --device /dev/fuse`), not of what is installed in it.
+
 ### Docker images
 
 Build in the repository root.
