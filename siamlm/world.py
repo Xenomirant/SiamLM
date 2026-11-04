@@ -284,6 +284,7 @@ class Agent:
         self.waiting_since = None              # task.gate: the round since which only waiting items are left
         self.cpt = 4.0                         # characters per token, calibrated from the billed prompt (ctx.count=whole)
         self.cpt_pending = None                # the last call's measurement, applied right before the next request is sized
+        self.api_errors_run = 0                # failed calls in a row (world.max_api_errors)
         self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities/; default none)
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "api_errors": 0, "no_tool": 0,
                       "edits": 0, "edits_applied": 0, "held": 0, "truncated": 0, "evictions": 0, "idle_steps": 0, "solved": 0, "submitted": 0}
@@ -406,7 +407,7 @@ class World:
         for k in range(1, self.n + 1):
             base = OmegaConf.create(OmegaConf.to_container(cfg.provider, resolve=True))   # not in struct mode: an
             pcfg = OmegaConf.merge(base, overrides[(k - 1) % len(overrides)])                # override may add keys
-            self.agents.append(Agent(k, pcfg, make_provider(pcfg), streams[k - 1], files[k - 1], Budget(c)))
+            self.agents.append(Agent(k, pcfg, make_provider(pcfg), streams[k - 1], files[k - 1], Budget(c, self.edit_name)))
             self.agents[-1].capabilities = make_capabilities(pcfg, self.agents[-1].provider, self, self.agents[-1])
         if self.task.needs_shell and self.edit_mode != "bash":
             raise ValueError(f"task {self.task.name} needs ctx.edit=bash (its items are worked with shell commands)")
@@ -967,9 +968,11 @@ class World:
             st.update(edits_left=self.E, holds=0)
         if resp.error:
             a.stats["api_errors"] += 1
-            if a.stats["api_errors"] >= int(self.cfg.world.get("max_api_errors", 5)):
+            a.api_errors_run += 1                      # in a row: a reply that arrives resets the run
+            if a.api_errors_run >= int(self.cfg.world.get("max_api_errors", 5)):
                 self.end_agent(a, "api_error")
             return "stop", ""
+        a.api_errors_run = 0
         words = (resp.text or "").strip()
         forged = re.match(r"\s*\[agent (\d+)\]", words) if self.marks else None
         if forged:                                     # a mark the model wrote itself stays as written (the harness never

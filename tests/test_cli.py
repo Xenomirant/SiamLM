@@ -23,7 +23,7 @@ def test_cli_runs_an_open_task_world_with_the_mock(tmp_path, capsys):
     runner.main(["task.name=open", "world.setup=external", "world.identity=names", "world.chat_others=user",
                  "world.alter_notice=true", "world.rounds=4", "ctx.count=turns", "world.seeds=[1,2]",
                  f"output.directory={tmp_path}", "output.batch=smoke"])
-    assert "skipped (complete)" in capsys.readouterr().out          # a finished world is not run again
+    assert "skipped (finished)" in capsys.readouterr().out          # a finished world is not run again
 
 
 def sandbox_image():

@@ -42,8 +42,8 @@ class Settings:
         s = dict(s or {})
         self.max_strength, self.max_angle = float(s.get("max_strength", 10)), float(s.get("max_angle", 90))
         self.decay, self.floor = float(s.get("decay", 0.85)), float(s.get("floor", 0.5))
-        self.max_active = int(s.get("max_active", 2))
-        self.cooldown = int(s.get("cooldown_turns", 0) or 0)
+        self.max_active = int(s.get("max_active", 4))           # the defaults of siamlm.yaml capabilities.steer
+        self.cooldown = int(s.get("cooldown_turns", 2) or 0)     # and docs/steering.md
         self.others_droppable = bool(s.get("others_droppable", True))
         self.methods = [m for m in (s.get("methods") or METHODS) if m in METHODS] or list(METHODS)
         self.notice = str(s.get("notice") or "none")

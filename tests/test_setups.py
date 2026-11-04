@@ -283,3 +283,13 @@ def test_others_edit_calls_count_as_sent_only_when_sent_as_calls(tmp_path):
     w.run()
     for a in w.agents:
         assert w.chars(a) == sent_chars(w.messages(a, 0, "")[1:-1])
+
+
+def test_clm_nudges_name_the_editing_tool_in_use(tmp_path):
+    from siamlm.tasks.open import OpenTask
+    for edit, name in (("tool", "edit_context"), ("bash", "bash")):
+        cfg = config("task.name=open", "world.setup=external", "world.n_agents=1", f"ctx.edit={edit}", "ctx.prompt_style=clm")
+        task = OpenTask("weak")
+        w = World(cfg, 1, task.streams(1), tmp_path / edit, task, factory(Scripted()), label="t")
+        b = w.agents[0].budget
+        assert b.tool == name and name in (b.nudge(int(0.6 * b.target))[1] or "")

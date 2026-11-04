@@ -114,8 +114,8 @@ def run(cfg, make_provider=None, grader_factory=None):
     def one(seed):
         out = root / f"world_s{seed}"
         done = out / "world.json"
-        if done.exists() and json.loads(done.read_text()).get("status") == "complete":
-            return {"seed": seed, "status": "skipped (complete)"}
+        if done.exists() and json.loads(done.read_text()).get("status") in ("complete", "round_limit"):
+            return {"seed": seed, "status": "skipped (finished)"}      # complete, or ended by the round limit: final
         if out.exists():                      # a cut-off world: keep it aside, start again
             out.rename(out.with_name(out.name + f"_cut{len(list(root.glob(out.name + '_cut*')))}"))
         task, st = build_task(cfg, int(seed), out, pool, grader_factory)

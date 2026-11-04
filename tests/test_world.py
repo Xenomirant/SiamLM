@@ -342,3 +342,17 @@ def test_an_empty_payload_is_not_a_submission(tmp_path):
     res = read_jsonl(tmp_path / "w" / "results.jsonl")
     assert len(res) == 1 and res[0]["passed"]
     assert "Not carried out: submit needs code." in "".join(p.read_text() for p in (tmp_path / "w").glob("context*.txt"))
+
+
+# --- lower-priority rules: api errors in a row; a relaunch skips round-limited worlds too ---------------------------
+
+def test_api_errors_end_an_agent_only_in_a_row(tmp_path):
+    a1 = Scripted([{"error": "e"}] * 4 + [tool("run_tests", code="x")] + [{"error": "e"}] * 4 + [tool("submit", code="print('OK')")])
+    w = world(tmp_path, [a1], [[problem(1)]], "world.n_agents=1", "world.max_api_errors=5", "world.max_steps_per_problem=20")
+    w.run()
+    assert w.agents[0].end_reason != "api_error" and read_jsonl(tmp_path / "w" / "results.jsonl")[0]["passed"]
+    assert w.agents[0].stats["api_errors"] == 8
+    a2 = Scripted([{"error": "e"}] * 5 + [tool("submit", code="print('OK')")])
+    w = world(tmp_path / "b", [a2], [[problem(1)]], "world.n_agents=1", "world.max_api_errors=5", "world.max_steps_per_problem=20")
+    w.run()
+    assert w.agents[0].end_reason == "api_error"

@@ -49,6 +49,8 @@ class Scripted:
             item = item(messages)
         if isinstance(item, str):
             return ProviderResponse(item, {"prompt_tokens": 10, "completion_tokens": 5}, "stop", 0, None, [])
+        if "error" in item and "name" not in item:       # {"error": "..."}: a failed call (after the provider's retries)
+            return ProviderResponse(None, {}, None, 0, item["error"], [], error_kind="client_error")
         if "finish" in item and "name" not in item:      # {"text": ..., "finish": "length"}: a reply cut off at the limit
             return ProviderResponse(item["text"], {"prompt_tokens": 10, "completion_tokens": item.get("tokens", 8000)},
                                     item["finish"], 0, None, [])

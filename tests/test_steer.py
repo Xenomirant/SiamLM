@@ -209,3 +209,11 @@ def test_a_real_steer_call_steers_the_next_generation(tmp_path):
     assert plain.steering["applied"] == {}
     assert (plain.text, plain.tool_calls) != (steered["text"], steered["tool_calls"])
     assert all(not layer._forward_hooks for layer in real.lm.model.layers)
+
+
+def test_settings_defaults_match_the_yaml():
+    from siamlm.capabilities.steer import Settings
+    from siamlm import run as runner
+    cfg = runner.compose([]).capabilities.steer
+    s = Settings({})
+    assert (s.max_active, s.cooldown) == (int(cfg.max_active), int(cfg.cooldown_turns)) == (4, 2)
