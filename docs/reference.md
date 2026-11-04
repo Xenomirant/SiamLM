@@ -264,7 +264,10 @@ Each call reports `cache_mode`, `cache_prompt`, `cache_reused`, `cache_relocated
 for that agent (the hooks assume a full prefill). Only full-attention rotary models with a per-layer DynamicCache
 (Qwen2/2.5/3, Llama 3) are supported; others fall back to `none` with a note in the usage. The same diff applies to
 training: a trainer that consumes the exported rows of one agent can reuse the prefix (or the survivors) between
-consecutive rows the same way; `turn_ids` and `message_authors` in each row identify what survived.
+consecutive rows the same way; `turn_ids` and `message_authors` in each row identify what survived. Measured
+(`docs/experiments/2026-11-05-kv-cache-reuse.md`): prefix prefills 22 % and span 15 % of the prompt on the presence
+worlds, with no wall-clock gain at 3B on an H100 (generation dominates and the span path is a Python loop); the
+fast path belongs in a serving engine (CLM's SGLang/vLLM patches) or a trainer.
 
 ### `capabilities`
 
