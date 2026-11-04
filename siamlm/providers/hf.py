@@ -146,10 +146,15 @@ def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
 class HFProvider:
     name = "hf"
 
-    def __init__(self, model: str, device: str = "cpu", dtype: str = "float32", steer=None, **_: object):
+    def __init__(self, model: str, device: str = "cpu", dtype: str = "float32", steer=None, cache: str = "none",
+                 cache_min_span: int = 16, cache_max_spans: int = 6, **_: object):
         self.model, self.device = model, device
         self.lm, self.tokenizer, self.lock = load_model(model, device, dtype)
         self._norms: dict = {}
+        self.cache_mode = str(cache or "none")            # none | prefix | span (siamlm/providers/kvcache.py)
+        self.cache_min_span, self.cache_max_spans = int(cache_min_span), int(cache_max_spans)
+        self._prev_ids: list[int] | None = None           # this agent's previous prompt and its cache
+        self._cache = None
         self.steering = None
         steer = dict(steer or {})
         if steer.get("enabled", False):
@@ -163,13 +168,55 @@ class HFProvider:
         return self.tokenizer.apply_chat_template(hf_messages(messages), tokenize=False, add_generation_prompt=True,
                                                   enable_thinking=False, **extra)
 
-    def _generate(self, ids, max_new: int, temperature: float, top_p: float):
+    def _generate(self, ids, max_new: int, temperature: float, top_p: float, past=None):
         import torch
         sample = dict(do_sample=True, temperature=float(temperature), top_p=float(top_p)) if temperature > 0 else \
             dict(do_sample=False, temperature=None, top_p=None, top_k=None)
+        extra = {"past_key_values": past} if past is not None else {}
         with torch.inference_mode():
             return self.lm.generate(**ids, max_new_tokens=int(max_new), pad_token_id=self.tokenizer.pad_token_id
-                                    or self.tokenizer.eos_token_id, **sample)
+                                    or self.tokenizer.eos_token_id, **sample, **extra)
+
+    def _reuse(self, ids):
+        """provider.cache: (past cache for the prompt's head, usage fields). The tail from the last inserted span on
+        is left to generate's own prefill; the cache is kept (cropped to the prompt) for the next call."""
+        from . import kvcache
+        prompt = ids["input_ids"][0].tolist()
+        n = len(prompt)
+        mode = self.cache_mode
+        info = {"cache_mode": mode, "cache_prompt": n}
+        if mode == "none":
+            return None, info
+        if self.steering is not None or not kvcache.supported(self.lm):
+            info["cache_mode"] = "none"
+            info["cache_note"] = "steering active" if self.steering is not None else "model not supported"
+            return None, info
+        plan = kvcache.ReusePlan(self._prev_ids or [], prompt, mode, self.cache_min_span, self.cache_max_spans)
+        past = None
+        if self._cache is not None and plan.segments and plan.segments[0][0] == "keep":
+            last_new = next((seg for seg in reversed(plan.segments) if seg[0] == "new"), None)
+            stop = min(last_new[1], n - 1) if last_new else n - 1    # generate must have at least one token to prefill
+            if stop > 0:
+                past = kvcache.build_cache(self.lm, ids["input_ids"], plan, self._cache, stop)
+                reused = sum(seg[3] for seg in plan.segments if seg[0] == "keep" and seg[2] < stop)
+                info.update(cache_reused=reused, cache_relocated=plan.relocated, cache_prefilled=n - reused)
+        if past is None:
+            info.update(cache_reused=0, cache_relocated=0, cache_prefilled=n)
+        return past, info
+
+    def _remember(self, ids, out, past):
+        """Keep the prompt's cache for the next call (generate extended `past` in place; crop the generated tokens)."""
+        n = ids["input_ids"].shape[1]
+        if past is not None:
+            past.crop(n)
+            self._cache = past
+        else:
+            from transformers import DynamicCache
+            import torch
+            with torch.inference_mode():          # a fresh cache of the whole prompt (one extra prefill, first call only)
+                self._cache = DynamicCache()
+                self.lm(input_ids=ids["input_ids"], attention_mask=ids["attention_mask"], past_key_values=self._cache, use_cache=True)
+        self._prev_ids = ids["input_ids"][0].tolist()
 
     def residual_norm(self, layer: int) -> float:
         """The typical activation norm at a decoder layer's output: the median over the tokens of an unsteered greedy
@@ -207,8 +254,11 @@ class HFProvider:
             with self.lock:
                 torch.manual_seed(int(seed))
                 applied = self.steering.applied() if self.steering else None
+                past, cache_info = self._reuse(ids)
                 with (self.steering.attached(self.lm, n_in) if self.steering else nullcontext()):
-                    out = self._generate(ids, max_new, temperature, top_p)
+                    out = self._generate(ids, max_new, temperature, top_p, past)
+                if self.cache_mode != "none" and cache_info.get("cache_mode") != "none":
+                    self._remember(ids, out, past)
                 if self.steering:
                     self.steering.after_generation()
         except Exception as error:                     # a failed generation is an API error to the world
@@ -223,7 +273,7 @@ class HFProvider:
             else self.lm.generation_config.eos_token_id or [])}
         finish = "tool_calls" if calls else ("length" if len(new) >= max_new and not ended else "stop")
         return ProviderResponse(
-            text=words, usage={"prompt_tokens": n_in, "completion_tokens": int(len(new)), "cost": 0.0},
+            text=words, usage={"prompt_tokens": n_in, "completion_tokens": int(len(new)), "cost": 0.0, **cache_info},
             finish_reason=finish, retries=0, error=None,
             attempts=[{"attempt": 0, "provider": self.name, "model": self.model, "status": "success"}],
             tool_calls=calls, internal_reasoning=reasoning, latency_s=round(time.time() - started, 3),
