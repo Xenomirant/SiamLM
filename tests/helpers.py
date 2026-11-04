@@ -49,12 +49,13 @@ class Scripted:
             item = item(messages)
         if isinstance(item, str):
             return ProviderResponse(item, {"prompt_tokens": 10, "completion_tokens": 5}, "stop", 0, None, [])
-        if "finish" in item:      # {"text": ..., "finish": "length"}: a reply cut off at the limit
+        if "finish" in item and "name" not in item:      # {"text": ..., "finish": "length"}: a reply cut off at the limit
             return ProviderResponse(item["text"], {"prompt_tokens": 10, "completion_tokens": item.get("tokens", 8000)},
                                     item["finish"], 0, None, [])
         item = dict(item)
         reasoning = item.pop("reasoning", None)   # {"reasoning": "...", **tool(...)}: the provider's own reasoning text
-        return ProviderResponse("thinking aloud", {"prompt_tokens": 10, "completion_tokens": 5}, "tool_calls", 0, None, [],
+        finish = item.pop("finish", "tool_calls")  # {**tool(...), "finish": "length"}: a call cut off at the limit
+        return ProviderResponse("thinking aloud", {"prompt_tokens": 10, "completion_tokens": 5}, finish, 0, None, [],
                                 [item], reasoning)
 
 

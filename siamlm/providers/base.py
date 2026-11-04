@@ -224,15 +224,23 @@ OPENROUTER = ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY")
 
 
 def parse_tool_calls(raw):
-    """OpenAI-format tool calls -> [{"id", "name", "arguments": dict}]. Unreadable arguments become {}."""
+    """OpenAI-format tool calls -> [{"id", "name", "arguments": dict}]. Unreadable arguments (invalid JSON, as in a
+    reply cut off at its token limit, or not an object) become {} with "arguments_error" saying why, so the world
+    can refuse the call instead of carrying out an empty one."""
     calls = []
     for item in raw or []:
         function = item.get("function") or {}
+        error = None
         try:
             arguments = json.loads(function.get("arguments") or "{}")
-        except Exception:
-            arguments = {}
-        calls.append({"id": item.get("id"), "name": function.get("name"), "arguments": arguments if isinstance(arguments, dict) else {}})
+        except Exception as e:
+            arguments, error = {}, f"{type(e).__name__}: {e}"
+        if not isinstance(arguments, dict):
+            arguments, error = {}, f"arguments are {type(arguments).__name__}, not an object"
+        call = {"id": item.get("id"), "name": function.get("name"), "arguments": arguments}
+        if error:
+            call["arguments_error"] = error[:200]
+        calls.append(call)
     return calls
 
 

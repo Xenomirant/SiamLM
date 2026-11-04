@@ -97,3 +97,13 @@ def test_hf_reply_parsing():
     out = hf_messages([{"role": "assistant", "content": None, "tool_calls": [
         {"id": "t1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"ls\"}"}}]}])
     assert out[0]["tool_calls"][0]["function"] == {"name": "bash", "arguments": {"command": "ls"}} and out[0]["content"] == ""
+
+
+def test_unreadable_tool_arguments_are_flagged_not_emptied():
+    from siamlm.providers.base import parse_tool_calls
+    cut = parse_tool_calls([{"id": "x", "function": {"name": "submit", "arguments": '{"code": "print('}}])
+    assert cut[0]["arguments"] == {} and "JSONDecodeError" in cut[0]["arguments_error"]
+    bad = parse_tool_calls([{"id": "y", "function": {"name": "submit", "arguments": "[1, 2]"}}])
+    assert bad[0]["arguments"] == {} and "not an object" in bad[0]["arguments_error"]
+    ok = parse_tool_calls([{"id": "z", "function": {"name": "submit", "arguments": '{"code": "print(1)"}'}}])
+    assert ok[0]["arguments"] == {"code": "print(1)"} and "arguments_error" not in ok[0]

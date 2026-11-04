@@ -1019,6 +1019,16 @@ class World:
         call = resp.tool_calls[0]
         name, args = call.get("name"), call.get("arguments") or {}
         more = " (only the first of your tool calls was carried out)" if len(resp.tool_calls) > 1 else ""
+        if call.get("arguments_error"):                 # unreadable arguments (a reply cut off mid-call, bad JSON):
+            a.stats["malformed"] = a.stats.get("malformed", 0) + 1   # said once in the context, nothing carried out
+            if words:
+                a.file.append(Turn("assistant", neutralize(words), a.k, "text"), self.round)
+            whose = f"agent {a.k}'s" if self.shared and self.identity == "names" else "your"
+            why = (f"it was cut off at the limit of {self.reply_limit(a)} tokens" if cut else
+                   "its arguments were not valid JSON")
+            a.file.append(Turn("user", f"[{whose} last reply's {name} call could not be read ({why}); nothing was carried out]",
+                               a.k, "notice"), self.round)
+            return "again", ""
         if name == self.edit_name:
             if st["edits_left"] <= 0:
                 self.echo(a, call, words, (f"Not applied: no more {self.edit_name} calls now; write a message." if self.free(a)
@@ -1079,6 +1089,9 @@ class World:
                 self.echo(a, call, words, f"Not carried out: {why}." + more, code=self.task.payload(args))
                 return "again", ""
         code = self.task.payload(args)
+        if getattr(self.task, "payload_required", True) and not code.strip():   # nothing to grade: not a submission
+            self.echo(a, call, words, f"Not carried out: {name} needs {self.task.arg_name}." + more, code=code)
+            return "again", ""
         if self.capped and self.tokens(a, [t for t in a.file.turns if t is not thought]) > a.budget.target:
             verdict = self.held(a, st, self.run_size(a, thought))   # (the reply's own reasoning never gets its call held)
             n = self.end_over_limit

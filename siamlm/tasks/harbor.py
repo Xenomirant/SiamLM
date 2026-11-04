@@ -205,6 +205,7 @@ SUBMIT = {"type": "function", "function": {
 
 
 class HarborTask(Task):
+    payload_required = False
     name = "harbor"
     try_name, final_name = None, "submit"
     arg_name = "note"

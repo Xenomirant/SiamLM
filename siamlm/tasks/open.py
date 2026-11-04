@@ -20,6 +20,7 @@ SEEDS = {"weak": "There is no task and nothing to solve. You are free to spend t
 
 
 class OpenTask(Task):
+    payload_required = False
     name = "open"
     try_name = None
     final_name = None

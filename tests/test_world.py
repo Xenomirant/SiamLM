@@ -317,3 +317,28 @@ def test_a_malformed_tool_call_is_said_once_in_the_context(tmp_path):
         (tmp_path / "w" / "context_agent_1.txt").read_text()
     assert a1.seen[1] != a1.seen[0]
     assert json.loads((tmp_path / "w" / "world.json").read_text())["agents"][0]["malformed"] == 1
+
+
+# --- a call that cannot be read, or has nothing in it, is not carried out ------------------------------------------
+
+def test_a_cut_off_tool_call_is_not_carried_out(tmp_path):
+    """A reply cut off inside its tool call arrives with unreadable arguments; before, that graded an empty program
+    and closed the item. Now nothing is carried out, the context says so once, and the next call can submit."""
+    a1 = Scripted([{**tool("submit", code=""), "arguments_error": "JSONDecodeError: unterminated string", "finish": "length"},
+                   tool("submit", code="print('OK')")])
+    w = world(tmp_path, [a1], [[problem(1)]], "world.n_agents=1")
+    w.run()
+    res = read_jsonl(tmp_path / "w" / "results.jsonl")
+    assert len(res) == 1 and res[0]["passed"]
+    text = "".join(p.read_text() for p in (tmp_path / "w").glob("context*.txt"))
+    assert "submit call could not be read (it was cut off at the limit of 8000 tokens); nothing was carried out" in text
+    assert json.loads((tmp_path / "w" / "world.json").read_text())["agents"][0]["malformed"] == 1
+
+
+def test_an_empty_payload_is_not_a_submission(tmp_path):
+    a1 = Scripted([tool("submit", code=""), tool("submit", code="print('OK')")])
+    w = world(tmp_path, [a1], [[problem(1)]], "world.n_agents=1")
+    w.run()
+    res = read_jsonl(tmp_path / "w" / "results.jsonl")
+    assert len(res) == 1 and res[0]["passed"]
+    assert "Not carried out: submit needs code." in "".join(p.read_text() for p in (tmp_path / "w").glob("context*.txt"))

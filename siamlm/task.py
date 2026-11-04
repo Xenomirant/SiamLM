@@ -39,6 +39,8 @@ class Outcome:
 
 
 class Task:
+    payload_required = True        # a work call with an empty payload is refused ("Not carried out: submit needs code");
+                                   # False for tasks whose payload is optional (open: none; harbor: a note)
     name = "task"
     try_name: str | None = None          # a work call with feedback (item stays open)
     final_name: str | None = None        # the graded call that closes the item
