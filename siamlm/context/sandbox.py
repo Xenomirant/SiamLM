@@ -25,7 +25,12 @@ import uuid
 LIVE: dict[str, "Sandbox"] = {}
 FILE = "/ctx/context.txt"
 KILL_OTHERS = ("import os, signal, sys\n"
-               "keep = {os.getpid(), os.getppid(), *map(int, sys.argv[1].split())}\n"
+               "keep = {os.getpid(), *map(int, sys.argv[1].split())}\n"
+               "p = os.getpid()\n"                       # the whole ancestor chain: the shell, and under Podman the
+               "while p > 1:\n"                           # exec session's holder process between it and the init
+               "    keep.add(p)\n"
+               "    try: p = int(open(f'/proc/{p}/stat').read().split(')')[-1].split()[1])\n"
+               "    except OSError: break\n"
                "n = 0\n"
                "for p in os.listdir('/proc'):\n"
                "    if p.isdigit() and int(p) not in keep:\n"
@@ -37,7 +42,43 @@ READ_FILE = (f"if [ -L {FILE} ] || [ ! -f {FILE} ]; then echo NOT_A_FILE >&2; ex
 
 
 def docker(args: list[str], timeout: float = 60, data: bytes | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["docker", *args], capture_output=True, timeout=timeout, input=data)
+    """`docker <args>` with stdout/stderr collected through temporary files rather than pipes: a wrapper that hands
+    the call to Podman (rootless, with a detached conmon and a process substitution on stderr) can leave a pipe open
+    after the command has returned, and a pipe-based run then waits for an EOF that never comes."""
+    import tempfile
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(["docker", *args], stdin=subprocess.PIPE if data is not None else subprocess.DEVNULL,
+                                stdout=out, stderr=err)
+        try:
+            if data is not None:
+                try:
+                    proc.stdin.write(data)
+                except BrokenPipeError:
+                    pass
+                proc.stdin.close()
+            code = proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            raise
+        out.seek(0); err.seek(0)
+        return subprocess.CompletedProcess(["docker", *args], code, out.read(), err.read())
+
+
+_runtime: dict = {}
+
+
+def is_podman() -> bool:
+    """True when the `docker` command is Podman's compatible CLI (it refuses --init without a private PID namespace,
+    as in a nested, rootless container; the harness then runs the container without an init process: the sweep after
+    every command kills whatever a command left behind, which is what --init's reaping was for here)."""
+    if "podman" not in _runtime:
+        try:
+            out = subprocess.run(["docker", "--version"], capture_output=True, text=True, timeout=30).stdout
+        except Exception:
+            out = ""
+        _runtime["podman"] = "podman" in out.lower()
+    return _runtime["podman"]
 
 
 def check_available(image: str) -> None:
@@ -52,6 +93,12 @@ def check_available(image: str) -> None:
             raise ValueError("no access to Docker; add your user to the docker group and log in "
                              "again, or run through `sg docker -c '...'`")
         raise ValueError(f"image {image} not found; build it from the Dockerfiles in docker/ (README: Docker images)")
+    probe = docker(["run", "--rm", "--network", "none", image, "sh", "-c", "cat /proc/1/comm; ls /proc | grep -c '^[0-9]'"], timeout=120)
+    lines = probe.stdout.decode(errors="replace").split()
+    if probe.returncode != 0 or len(lines) < 2 or lines[0] not in ("sh", "catatonit", "docker-init", "tini", "sleep") or int(lines[1]) > 8:
+        raise ValueError("the container runtime does not give containers a private PID namespace (PID 1 inside is "
+                         f"{lines[:1]} with {lines[1:2]} processes visible): the sandbox's process sweep would reach host "
+                         "processes. Refusing. Use a runtime with PID isolation (Docker, or Podman with --pid private).")
 
 
 def image_id(image: str) -> str | None:
@@ -83,7 +130,7 @@ class Sandbox:
     def start(self) -> None:
         s = self.s
         tmp = lambda path, size: ["--tmpfs", f"{path}:rw,nosuid,nodev,size={size},mode=1777"]
-        args = ["run", "-d", "--rm", "--init", "--name", self.name, "--network", "none", "--read-only",
+        args = ["run", "-d", "--rm", *([] if is_podman() else ["--init"]), "--name", self.name, "--network", "none", "--read-only",
                 "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "--pids-limit", str(s.get("pids_limit", 128)), "--memory", str(s.get("memory", "512m")),
                 "--cpus", str(s.get("cpus", 1)), "--user", f"{os.getuid()}:{os.getgid()}",

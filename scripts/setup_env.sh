@@ -22,7 +22,15 @@ if [ ! -x .venv/bin/python ]; then
 fi
 .venv/bin/python -c "import torch, transformers, hydra; print('venv ok: torch', torch.__version__, 'transformers', transformers.__version__)"
 
-# 2. Docker, if this container can run it
+# 2. Docker, if this container can run it. On this box `docker` is a wrapper around rootless Podman run as the user
+#    "pod" (/workspace/bootstrap/podman-setup.sh); Podman needs two things in a nested container: no default sysctls
+#    (crun cannot write /proc/sys here) and no --init (siamlm/context/sandbox.py omits it under Podman).
+if docker --version 2>/dev/null | grep -qi podman; then
+  mkdir -p /etc/containers/containers.conf.d && chmod 755 /etc/containers /etc/containers/containers.conf.d
+  printf '[containers]\ndefault_sysctls = []\n' > /etc/containers/containers.conf.d/99-siamlm.conf && chmod 644 /etc/containers/containers.conf.d/99-siamlm.conf
+  command -v catatonit >/dev/null 2>&1 || apt-get install -y -qq catatonit >/dev/null 2>&1 || true
+  echo "docker: podman wrapper; default sysctls disabled for nested rootless use"
+fi
 can_mount() { d=$(mktemp -d); mount -t tmpfs none "$d" 2>/dev/null && { umount "$d"; rmdir "$d"; return 0; }; rmdir "$d"; return 1; }
 if [ -S /var/run/docker.sock ] || command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   echo "docker: available (daemon reachable)"; DOCKER=1
