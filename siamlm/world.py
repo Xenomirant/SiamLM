@@ -373,6 +373,11 @@ class World:
         self.exit_question = str(w.get("exit_question") or "")
         self.evicts = bool(w.get("evict", True))                  # false: the harness never removes turns
         self.warnings: list[str] = []
+        if self.edit_mode == "bash" and str((c.get("bash") or {}).get("backend", "docker")) == "local":
+            msg = ("ctx.bash.backend=local: commands run in namespaces of this host, not in Docker; the host filesystem "
+                   "is readable from the sandbox. For local, offline models only (siamlm/context/localbox.py).")
+            self.warnings.append(msg)
+            print("warning: " + msg, file=sys.stderr)
         if self.evicts and self.capped:                           # the shipped default, kept for byte identity with the
             msg = ("world.evict=true: after world.max_held held calls the harness itself removes the oldest turns, "   # earlier
                    "while the instructions tell the model that nothing is removed unless it removes it; a run then "  # runs
@@ -1285,7 +1290,7 @@ class World:
                 "text": resp.text or "", "tools": [c.get("name") for c in resp.tool_calls], "finish_reason": resp.finish_reason,
                 "reasoning_chars": len(resp.internal_reasoning or ""), "usage": usage, "cost": cost, "error": resp.error,
                 "turn_ids": [t.id for t in a.file.turns],
-                "message_authors": authors if self.cfg.output.get("save_requests", False) else None})
+                **({"message_authors": authors} if self.cfg.output.get("save_requests", False) else {})})
 
     # --- turns ---------------------------------------------------------------------------------------------
     def echo(self, a: Agent, call, words, result, code=None):
@@ -1526,7 +1531,6 @@ class World:
         files = self.task.files(item)
         if not files:
             return
-        from siamlm.context.sandbox import docker
         box = self.sandbox(a)
         if not box.alive():                          # a command may have killed the container (review 2 Nov)
             box.restart()
@@ -1542,7 +1546,7 @@ class World:
                     info.size, info.mode = len(raw), 0o644
                     tf.addfile(info, io.BytesIO(raw))
             script, data = f"{script} && mkdir -p {root} && tar -xf - -C {root}", buf.getvalue()
-        out = docker(["exec", "-i", box.name, "sh", "-c", script], data=data)
+        out = box.exec(script, data)
         row = {"round": self.round, "agent": a.k, "item": item["id"], "event": "put" if put else "removed",
                "files": len(files)}
         if out.returncode != 0:                      # logged, never fatal: one odd command must not end the world
@@ -1555,12 +1559,11 @@ class World:
         """Logging only: whether a dependent's value (state_chain `needs`) is in the context the agent will see, or
         anywhere in its sandbox outside the task folders (/work, /tmp, /dev/shm, side files in /ctx), and whether the
         base it comes from is closed."""
-        from siamlm.context.sandbox import docker
         value = item["needs"]
         text = render(a.file.turns, a.file.show_agents or self.marks)
         find = ("grep -rlF -- \"$1\" /work /tmp /dev/shm /ctx 2>/dev/null | grep -v -e '^/work/env/' "
                 "-e '^/ctx/context.txt$' | head -20")
-        out = docker(["exec", box.name, "sh", "-c", find, "sh", value])
+        out = box.exec(find, None, [value])
         hits = [h for h in out.stdout.decode(errors="replace").split("\n") if h]
         return {"value_in_context": value in text, "value_in_sandbox": hits,
                 "base_closed": item.get("link") in self.closed_ids}
@@ -1572,10 +1575,15 @@ class World:
         if item_box is not None:
             return item_box
         if a.k not in self.boxes:
-            from siamlm.context import sandbox as sbx
             settings = self.cfg.ctx.bash
-            sbx.check_available(str(settings.image))
-            box = sbx.Sandbox(settings)
+            if str(settings.get("backend", "docker")) == "local":     # no Docker: namespaces on this host (localbox.py)
+                from siamlm.context import localbox
+                localbox.check_available()
+                box = localbox.LocalSandbox(settings)
+            else:
+                from siamlm.context import sandbox as sbx
+                sbx.check_available(str(settings.image))
+                box = sbx.Sandbox(settings)
             box.start()
             self.boxes[a.k] = box
         return self.boxes[a.k]

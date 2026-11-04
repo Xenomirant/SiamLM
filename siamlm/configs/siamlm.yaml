@@ -94,6 +94,9 @@ ctx:
   atomic: false              # true: an editing call is written into the file after it ran, with its result
   edit: tool                 # tool (edit_context) | bash (CLM-style: the agent's sandbox holds the file as /ctx/context.txt)
   bash:
+    backend: docker          # docker | local (no Docker: each command in a user+mount+pid+network namespace of this
+                             # host with tmpfs at /ctx and /work, no network, processes killed at the end; the host
+                             # filesystem stays readable: for local, offline models only; siamlm/context/localbox.py)
     image: siamlm-sandbox:1     # docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker
     command_timeout_s: 120
     output_chars: 4000       # characters of each stream shown (atomic: the start, then "[… N more bytes not shown]");

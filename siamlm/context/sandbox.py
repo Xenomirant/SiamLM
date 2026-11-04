@@ -175,6 +175,10 @@ class Sandbox:
     def exec_options(self) -> list[str]:
         return ["-w", self.workdir]
 
+    def exec(self, script: str, data: bytes | None = None, args: list[str] | None = None) -> subprocess.CompletedProcess:
+        """A harness script (sh -c) inside the container, with optional stdin and positional arguments."""
+        return docker(["exec", "-i", self.name, "sh", "-c", script, "sh", *(args or [])], data=data)
+
     def read_tree(self, path: str, cap: int = 20000) -> dict:
         """{relative path: {bytes, sha1, text (the first `cap` characters, decoded leniently)}} for every regular file
         under `path`; {} if it cannot be read."""
