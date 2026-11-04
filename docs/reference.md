@@ -245,6 +245,27 @@ Providers (model backends, `siamlm/configs/provider/`):
   settings (`concepts`, `vectors_dir`, `layer`, `extract_questions`) and the older per-agent switch `enabled`
   (= `capabilities.steer.self` for that agent; docs/steering.md).
 
+### `provider` (hf backend): KV-cache reuse across an agent's calls
+
+Every request is rebuilt from the shared context, so consecutive prompts of one agent differ only where the context
+changed since its last call (the status line, new turns, edits in the middle). `provider.cache` on the `hf` backend
+(`siamlm/providers/kvcache.py`; default `none`, behaviour unchanged):
+
+- `prefix`: the longest common prefix with the agent's previous prompt keeps its cached keys and values; the rest is
+  prefilled. Exact.
+- `span`: Suffix Cache Reuse, after Context Language Models (ideas only): the new prompt is diffed against the
+  previous one at the token level; every surviving span keeps its cache, moved to its new position (the keys'
+  rotary encoding re-rotated by the position delta), and only inserted tokens are prefilled, each new span against
+  the cache of what precedes it. Survivors carry states computed under the old prefix: an approximation that CLM
+  reports as harmless to slightly helpful (a regulariser). `cache_min_span` (16) and `cache_max_spans` (6) bound it.
+
+Each call reports `cache_mode`, `cache_prompt`, `cache_reused`, `cache_relocated`, `cache_prefilled` in its `usage`
+(`calls.jsonl`); `scripts/cache_reuse_report.py <batch>` tabulates them with latencies. Steering switches reuse off
+for that agent (the hooks assume a full prefill). Only full-attention rotary models with a per-layer DynamicCache
+(Qwen2/2.5/3, Llama 3) are supported; others fall back to `none` with a note in the usage. The same diff applies to
+training: a trainer that consumes the exported rows of one agent can reuse the prefix (or the survivors) between
+consecutive rows the same way; `turn_ids` and `message_authors` in each row identify what survived.
+
 ### `capabilities`
 
 All off by default; docs/capabilities.md says what each does and costs. `pin` (+ `pin_cost`, 2.0),
