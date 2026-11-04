@@ -21,6 +21,16 @@ rebuilt from the context's version log and call_turns.jsonl (`reply_source: "rec
 are as written into the context, so a work call's argument is the payload the task extracted (e.g. LCB code without
 its ``` fence), not the raw arguments. Without requests/ no prompts exist; such calls are left out (counted in notes).
 Rewards come from results.jsonl: `reward` when the task gives one (Harbor tasks), else 1.0 / 0.0 from `passed`.
+
+Training mask. In a shared context other agents' replies are sent as `assistant` messages (world.chat_others=own,
+the default; world.others_as=own), so a trainer that learns from every assistant message would train agent k on its
+partners' outputs and on text others edited. Every chat row therefore carries `mask`: one boolean per message, true
+for the assistant messages that hold only agent k's own turns and for the appended reply. It comes from
+`message_authors` in calls.jsonl (worlds run with output.save_requests=true after 4 Nov 2026); for older worlds the
+mask is `reply_only` (only the appended reply is true), and `metadata.mask_source` says which. Pool worlds: a call's
+item and reward are those of the problem its work call named (results.jsonl `title`); calls that named no problem
+have none. The joint goal's credit for a submit on a partner's item stays with the item's owner (as results.jsonl
+records it); a credit policy for the submitter is the consumer's choice (`metadata.goal`).
 """
 from __future__ import annotations
 
@@ -91,9 +101,12 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
     for r in logs.replies:
         replies.setdefault((r["round"], r["agent"], r["call_in_step"]), []).append(r)
     by_item: dict = {}
+    by_title: dict = {}
     for r in logs.results:
         if r.get("agent") == k:
             by_item[r["problem"]] = r
+            if r.get("title"):
+                by_title[r["title"]] = r
     reasoning = {(r["round"], r["agent"], r["call_in_step"]): r["text"] for r in logs.reasoning}
     tools_file = logs.dir / "requests" / f"tools_a{k}.json"
     first = json.loads(tools_file.read_text(encoding="utf-8")) if tools_file.exists() else None   # the first call's set
@@ -133,7 +146,13 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
         else:
             text, calls, source, thought = None, [], None, reasoning.get(key)
         item = by_item.get(c.get("problem"))
-        out.append({"round": c["round"], "call_in_step": c["call_in_step"], "item": c.get("problem"),
+        item_id = c.get("problem")
+        if item is None and logs.doc.get("setup") == "pool" and calls:     # pool: the problem the work call named
+            named = (calls[0].get("arguments") or {}).get("problem")
+            if named in by_title:
+                item, item_id = by_title[named], by_title[named]["problem"]
+        out.append({"round": c["round"], "call_in_step": c["call_in_step"], "item": item_id,
+                    "message_authors": c.get("message_authors"),
                     "messages": json.loads(req.read_text(encoding="utf-8")) if req.exists() else None,
                     "tools": tools_of(c), "text": text, "tool_calls": calls, "reasoning": thought, "reply_source": source,
                     "result": result, "notices": notices, "error": c.get("error"), "usage": c.get("usage") or {},
@@ -150,8 +169,18 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
                         "reply_source": "exit.jsonl", "result": None, "notices": [], "error": e.get("error"),
                         "usage": e.get("usage") or {}, "cost": e.get("cost"), "finish_reason": e.get("finish_reason"),
                         "sampling_seed": (int(logs.doc["seed"]) * 1000003 + k * 7919 + 999983) % (2 ** 31),
-                        "reward": None, "item_passed": None})
+                        "reward": None, "item_passed": None, "message_authors": None})
     return out
+
+
+def mask_of(call: dict, k: int) -> tuple[list[bool], str]:
+    """One boolean per message of the row (request + the appended reply): the assistant messages made only of agent
+    k's own turns, and the reply. ("logged" from calls.jsonl message_authors; else "reply_only".)"""
+    messages, authors = call["messages"], call.get("message_authors")
+    if authors is None or len(authors) != len(messages):
+        return [False] * len(messages) + [True], "reply_only"
+    own = [m["role"] == "assistant" and all(ag == k for ag in ags) for m, ags in zip(messages, authors)]
+    return own + [True], "logged"
 
 
 def assistant_message(call: dict) -> dict:
@@ -176,8 +205,12 @@ def chat_rows(logs: WorldLogs, k: int, calls: list[dict]) -> list[dict]:
     for c in calls:
         if not usable(c):
             continue
+        mask, source = mask_of(c, k)
         rows.append({"messages": c["messages"] + [assistant_message(c)], "tools": c["tools"], "reward": c["reward"],
+                     "mask": mask,
                      "metadata": {**settings, "agent": k, "model": agent["model"], "round": c["round"],
+                                  "mask_source": source, "own_assistant_indices": [i for i, m in enumerate(mask) if m],
+                                  "message_authors": c.get("message_authors"),
                                   "call_in_step": c["call_in_step"], "kind": c.get("kind", "call"), "item": c["item"],
                                   "item_passed": c["item_passed"], "result": c["result"], "notices": c["notices"],
                                   "reasoning": c["reasoning"], "finish_reason": c["finish_reason"], "usage": c["usage"],
@@ -199,7 +232,8 @@ def atif(logs: WorldLogs, k: int, calls: list[dict]) -> dict:
                       "observation": {"results": [{"content": json.dumps(c["messages"], ensure_ascii=False)}]},
                       "extra": {"context_management": {"type": "siamese_rebuild", "boundary": "replace",
                                                        "content_format": "openai_chat_messages_json"},
-                                "round": c["round"], "call_in_step": c["call_in_step"]}})
+                                "round": c["round"], "call_in_step": c["call_in_step"],
+                                "message_authors": c.get("message_authors")}})
         step = {"step_id": len(steps) + 1, "source": "agent", "model_name": agent["model"], "message": c["text"] or "",
                 "llm_call_count": 1}
         if c["reasoning"]:

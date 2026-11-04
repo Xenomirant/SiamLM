@@ -223,14 +223,16 @@ def chat_chars(turns: list, marks: bool = False, viewer: int | None = None) -> i
     return total
 
 
-def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -> list[dict]:
+def chat_messages(turns: list, marks: bool = False, viewer: int | None = None, authors: list | None = None) -> list[dict]:
     """setup=pool / external: the file as plain chat, one message per turn, no headers. Every reply (whoever wrote it)
     is an assistant message; an unedited call followed by its result is a real tool call + tool message; problem
     statements, notices and any other user turn are user messages. If the file starts with a reply, a neutral first user
     message '(start of the context)' is put in front (not a turn). marks: every message starts with mark(turn).
     viewer (world.chat_others=user): another agent's turns, its calls and their results included, are user messages that
-    start with its mark, never the viewer's own assistant messages or tool calls."""
+    start with its mark, never the viewer's own assistant messages or tool calls. authors (a list, filled in place): the
+    agent of every message returned, in order (None for the placeholder); export uses it for the training mask."""
     out, skip = [], set()
+    who = authors if authors is not None else []
     tag0 = (lambda t, text: f"{mark(t)}\n{text}".strip() if mark(t) else text) if marks else (lambda t, text: text)
     tag = lambda t, text: f"{pin_mark(t)}\n{tag0(t, text)}".strip() if t.pinned is not None else tag0(t, text)
     for i, t in enumerate(turns):
@@ -239,6 +241,7 @@ def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -
         if viewer is not None and t.agent not in (None, viewer):
             content = f"{mark(t)}\n{t.text.strip()}".strip()
             out.append({"role": "user", "content": f"{pin_mark(t)}\n{content}" if t.pinned is not None else content})
+            who.append([t.agent])
             continue
         nxt = turns[i + 1] if i + 1 < len(turns) else None
         paired = nxt is not None and nxt.kind == "result" and nxt.reply_to == t.id
@@ -247,11 +250,14 @@ def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -
                         "tool_calls": [{"id": f"t{t.id}", "type": "function", "function": {
                             "name": t.call["name"], "arguments": json.dumps(t.call.get("arguments") or {}, ensure_ascii=False)}}]})
             out.append({"role": "tool", "tool_call_id": f"t{t.id}", "content": tag(nxt, nxt.text.strip())})
+            who.extend([[t.agent], [nxt.agent]])
             skip.add(i + 1)
         else:
             out.append({"role": "assistant" if t.role == "assistant" else "user", "content": tag(t, t.text.strip())})
+            who.append([t.agent])
     if out and out[0]["role"] != "user":
         out.insert(0, {"role": "user", "content": "(start of the context)"})
+        who.insert(0, [None])
     return out
 
 
@@ -768,12 +774,17 @@ class World:
     def tester_of(self, a: Agent) -> Agent:
         return self.agents[(a.k - 2) % self.n]
 
-    def messages(self, a: Agent, size: int, extra: str, status: bool = True) -> list[dict]:
-        """The request for one call, rebuilt from the stored file every time (the API is stateless)."""
+    def messages(self, a: Agent, size: int, extra: str, status: bool = True, authors: list | None = None) -> list[dict]:
+        """The request for one call, rebuilt from the stored file every time (the API is stateless). authors: filled
+        with the agent(s) behind every message (None for the system message, the status and the placeholder)."""
+        who = [] if authors is None else authors
         if not self.chat:
-            body = a.file.messages(viewer=a.k, labelled=self.labelled, others_as=self.others_as, headers=True)
+            body = a.file.messages(viewer=a.k, labelled=self.labelled, others_as=self.others_as, headers=True, authors=who)
         else:
-            body = chat_messages(a.file.turns, self.marks, a.k if self.chat_others == "user" else None)
+            body = chat_messages(a.file.turns, self.marks, a.k if self.chat_others == "user" else None, authors=who)
+        who.insert(0, [None])
+        if status:
+            who.append([None])
         return ([{"role": "system", "content": self.system(a)}] + body
                 + ([{"role": "user", "content": self.status(a, size, extra)}] if status else []))
 
@@ -908,9 +919,10 @@ class World:
                 size = self.tokens(a)
                 seen = [t.id for t in a.file.turns]                # the numbering this request shows
                 version = len(a.file.versions)                     # the file as of this version (versions.jsonl n)
-                messages = self.messages(a, size, extra)
+                authors: list = []
+                messages = self.messages(a, size, extra, authors=authors)
             extra = ""
-            resp = self.call(a, messages, n_call, size, seen, version)
+            resp = self.call(a, messages, n_call, size, seen, version, authors)
             with self.lock:
                 done, extra = self.handle(a, resp, seen, n_call, extra)
             if done == "acted":
@@ -1160,7 +1172,7 @@ class World:
         if a.cpt_pending is not None:
             a.cpt, a.cpt_pending = 0.5 * a.cpt + 0.5 * a.cpt_pending, None
 
-    def call(self, a: Agent, messages, n_call, size, seen=None, version=None):
+    def call(self, a: Agent, messages, n_call, size, seen=None, version=None, authors=None):
         p = a.pcfg
         seed = (self.seed * 1000003 + a.k * 7919 + a.stats["calls"]) % (2 ** 31)
         started = time.time()
@@ -1198,6 +1210,7 @@ class World:
             "round": self.round, "agent": a.k, "model": a.model, "problem": a.problem["id"] if a.problem else None,
             "call_in_step": n_call, "context_tokens": size, "chars_per_token": round(a.cpt, 3),
             "turn_ids": seen if self.cfg.output.get("save_requests", False) else None, "version": version, "tools_hash": tools_hash,
+            "message_authors": authors if self.cfg.output.get("save_requests", False) else None,   # per message: whose turns
             "usage": usage, "cost": cost, "finish_reason": resp.finish_reason,
             "tools": [c.get("name") for c in resp.tool_calls], "text_chars": len(resp.text or ""),
             "reasoning_chars": len(resp.internal_reasoning or ""), "error": resp.error, "error_kind": resp.error_kind,

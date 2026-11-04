@@ -193,7 +193,7 @@ class ContextFile:
         return render(self.turns, attribution, viewer)
 
     def messages(self, viewer: int | None = None, labelled=True, others_as: str = "user", headers: bool = True,
-                 turns: list[Turn] | None = None) -> list[dict]:
+                 turns: list[Turn] | None = None, authors: list | None = None) -> list[dict]:
         """The turns (default: the file's) as chat messages for one agent.
         - labelled: an attribution (labelled | other | none), or a bool (True = labelled).
         - headers: each message starts with its [[TURN i …]] line (as in the file), so turns can be named by number.
@@ -202,16 +202,22 @@ class ContextFile:
         - Joint files: another agent's turn is sent in its own role (others_as=own: a reply is an assistant message,
           with its tool calls) or as a user message (user); without headers it starts with "[agent k]" (labelled) or
           "[another agent]" (other).
-        Consecutive plain messages of one role are merged."""
+        Consecutive plain messages of one role are merged.
+        - authors (a list, filled in place): one entry per message returned, the agent numbers whose turns it holds
+          (a merged message can hold several; None for the neutral placeholder). Export uses it for the training mask."""
         attribution = labelled if isinstance(labelled, str) else ("labelled" if labelled else "none")
         out: list[dict] = []
         turns, skip = (self.turns if turns is None else turns), set()
+        auth = authors if authors is not None else []
 
-        def plain(role, content):
+        def plain(role, content, agent):
             if out and out[-1]["role"] == role and "tool_calls" not in out[-1] and role != "tool":
                 out[-1]["content"] += "\n\n" + content
+                if agent not in auth[-1]:
+                    auth[-1].append(agent)
             else:
                 out.append({"role": role, "content": content})
+                auth.append([agent])
 
         for i, t in enumerate(turns):
             if i in skip:
@@ -227,16 +233,20 @@ class ContextFile:
                 content = (head + tag + str(t.call.get("content") or "")).strip() or None
                 out.append({"role": "assistant", "content": content, "tool_calls": [{"id": f"t{t.id}", "type": "function",
                             "function": {"name": t.call["name"], "arguments": json.dumps(t.call.get("arguments") or {}, ensure_ascii=False)}}]})
+                auth.append([t.agent])
                 if t.kind == "move":
                     out.append({"role": "tool", "tool_call_id": f"t{t.id}", "content": str(t.call.get("result") or "ok")})
+                    auth.append([t.agent])
                 else:
                     nhead = header(i + 2, nxt, attribution, viewer) + "\n" if headers else ""
                     out.append({"role": "tool", "tool_call_id": f"t{t.id}", "content": nhead + nxt.text.strip()})
+                    auth.append([nxt.agent])
                     skip.add(i + 1)
                 continue
-            plain(role, head + tag + t.text.strip())
+            plain(role, head + tag + t.text.strip(), t.agent)
         if out and out[0]["role"] != "user":   # some providers refuse a conversation that opens with the assistant
             out.insert(0, {"role": "user", "content": "[context]"})
+            auth.insert(0, [None])
         return out
 
     # --- changing ------------------------------------------------------------------------------------------

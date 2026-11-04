@@ -88,3 +88,58 @@ def test_the_command_line_exports_a_batch(tmp_path, capsys):
     assert summary["agents"][0]["exported"] == 4
     assert (tmp_path / "x" / "cell" / "world_s1" / "agent_1.atif.json").exists()
     assert (tmp_path / "x" / "cell" / "world_s1" / "agent_2.chat.jsonl").exists()
+
+
+# --- the training mask: only the agent's own assistant messages, and the reply -------------------------------------
+
+def test_rows_carry_a_mask_over_own_assistant_messages(tmp_path):
+    out, a1, a2 = world(tmp_path)                        # external, names, marks; chat_others=own (the default)
+    export.export_world(out)
+    rows1 = read_jsonl(out / "trajectories" / "agent_1.chat.jsonl")
+    rows2 = read_jsonl(out / "trajectories" / "agent_2.chat.jsonl")
+    for row in rows1 + rows2:
+        assert len(row["mask"]) == len(row["messages"]) and row["mask"][-1] is True
+        assert row["metadata"]["mask_source"] == "logged"
+        assert row["metadata"]["own_assistant_indices"] == [i for i, m in enumerate(row["mask"]) if m]
+        assert not row["mask"][0]                        # the system message
+    # agent 2's one call came after agent 1's first reply: that assistant message is agent 1's, so it is masked out
+    row = rows2[0]
+    partner = [i for i, m in enumerate(row["messages"][:-1]) if m["role"] == "assistant"]
+    assert partner and all(row["mask"][i] is False for i in partner)
+    # agent 1's later calls see its own replies (true) and agent 2's submit (false)
+    late = rows1[-1]
+    own = [i for i, (m, ags) in enumerate(zip(late["messages"][:-1], late["metadata"]["message_authors"]))
+           if m["role"] == "assistant" and ags == [1]]
+    theirs = [i for i, (m, ags) in enumerate(zip(late["messages"][:-1], late["metadata"]["message_authors"]))
+              if m["role"] == "assistant" and ags == [2]]
+    assert own and theirs and all(late["mask"][i] for i in own) and not any(late["mask"][i] for i in theirs)
+    assert all(len(ags) >= 1 for ags in late["metadata"]["message_authors"])
+
+
+def test_older_worlds_get_a_reply_only_mask(tmp_path):
+    out, a1, _ = world(tmp_path)
+    calls = read_jsonl(out / "calls.jsonl")
+    for c in calls:
+        c.pop("message_authors", None)
+    (out / "calls.jsonl").write_text("".join(json.dumps(c) + "\n" for c in calls))
+    export.export_world(out)
+    for row in read_jsonl(out / "trajectories" / "agent_1.chat.jsonl"):
+        assert row["metadata"]["mask_source"] == "reply_only" and row["mask"] == [False] * (len(row["messages"]) - 1) + [True]
+
+
+def test_pool_rows_carry_the_reward_of_the_problem_they_named(tmp_path):
+    from helpers import FakeGrader
+    cfg = runner.compose(["world.setup=pool", "world.identity=names", "world.order=fixed", "world.max_work_calls=2",
+                          "output.save_requests=true", "world.n_agents=2"])
+    OmegaConf.set_struct(cfg, False)
+    p1, p2 = problem(1), problem(2)
+    p1["title"], p2["title"] = "task-1", "task-2"
+    a1 = Scripted([tool("submit", code="print('OK')", problem="task-1")])
+    a2 = Scripted([tool("submit", code="print(0)", problem="task-2")])
+    out = tmp_path / "batch" / "cell" / "world_s1"
+    World(cfg, 1, [[p1], [p2]], out, FakeGrader(), factory(a1, a2), label="cell/s1").run()
+    export.export_world(out)
+    r1 = read_jsonl(out / "trajectories" / "agent_1.chat.jsonl")
+    assert r1 and r1[0]["reward"] == 1.0 and r1[0]["metadata"]["item"] == "p1"
+    r2 = read_jsonl(out / "trajectories" / "agent_2.chat.jsonl")
+    assert r2 and r2[0]["reward"] == 0.0 and r2[0]["metadata"]["item"] == "p2"
