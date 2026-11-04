@@ -200,3 +200,65 @@ def test_curation_advice_and_dashboard_are_off_by_default_and_opt_in(tmp_path):
     assert 1 <= int(rows[0][4]) < int(rows[1][4])                             # a rewritten turn ages from its rewrite
     doc = json.loads((tmp_path / "d" / "w" / "world.json").read_text())
     assert doc["dashboard"] is True and doc["curation_advice"].startswith("Keep preferences, commitments,")
+
+
+# --- the size enforced is the size shown, and a held last call is not counted twice --------------------------------
+
+class Billing(Scripted):
+    """Scripted, but an item may carry "prompt_tokens": the billed prompt size of that reply."""
+
+    def chat(self, messages, **kw):
+        item = self.script[0] if self.script else None
+        billed = item.pop("prompt_tokens", None) if isinstance(item, dict) else None
+        r = super().chat(messages, **kw)
+        if billed is not None:
+            r.usage["prompt_tokens"] = billed
+        return r
+
+
+def test_the_size_enforced_is_the_size_shown(tmp_path):
+    """A reply whose billing halves the calibration must not get its own call held: the status it was shown said the
+    context was under the limit. The next request shows the new size (over) and is then held."""
+    a1 = Billing(["y" * 3000, {"text": "second", "finish": "stop", "prompt_tokens": 100000}, "third"])
+    a2 = Scripted([".", ".", "."])
+    w = open_world(tmp_path, [a1, a2], "ctx.count=turns", "ctx.budget_tokens=900", "ctx.reserve_tokens=100",
+                   "world.end_over_limit=3", "ctx.atomic=true")
+    w.run()
+    status2, status3 = a1.seen[1][-1]["content"], a1.seen[2][-1]["content"]
+    assert "over the limit" not in status2 and "/800 tokens" in status2
+    assert "over the limit" in status3                                    # the calibration applies at the next request
+    appends = [t for v in read_jsonl(tmp_path / "w" / "versions.jsonl") if v["op"] == "append" for t in v["turns_set"]]
+
+    def held_after(reply):                        # is the turn right after agent 1's reply a held notice?
+        i = next(i for i, t in enumerate(appends) if t["agent"] == 1 and t["kind"] == "text" and t["text"] == reply)
+        nxt = appends[i + 1] if i + 1 < len(appends) else None
+        return bool(nxt and nxt["kind"] == "notice" and nxt["text"].startswith("[held:"))
+    assert not held_after("second") and held_after("third")
+    calls = [c for c in read_jsonl(tmp_path / "w" / "calls.jsonl") if c["agent"] == 1]
+    assert calls[1]["chars_per_token"] == 4.0 and calls[2]["chars_per_token"] < 4.0
+
+
+def test_a_held_last_call_is_not_counted_again_by_the_turn_end(tmp_path):
+    """max_calls_per_step=2, end_over_limit=3: from round 2 every reply of agent 1 is held; the second held reply of a
+    turn is its last call. The turn's end must not count that hold again, so the session ends after three held
+    replies (round 3), not two (round 2)."""
+    a1 = Scripted(["x" * 12000] + ["a"] * 8)
+    a2 = Scripted(["."] * 6)
+    w = open_world(tmp_path, [a1, a2], "world.rounds=5", "world.max_calls_per_step=2", "world.end_over_limit=3",
+                   "ctx.count=turns")
+    w.run()
+    ended = [e for e in read_jsonl(tmp_path / "w" / "ended.jsonl") if e["agent"] == 1]
+    assert ended and ended[0]["held_in_a_row"] == 3 and ended[0]["round"] == 3
+    assert w.agents[0].stats["held_replies"] == 3 and w.agents[0].stats.get("held_turns", 0) == 0
+    text = (tmp_path / "w" / "context.txt").read_text()
+    assert "turn ended over the limit" not in text          # no second count of an already held call
+
+
+def test_a_turn_with_no_held_call_still_counts_when_it_ends_over_the_limit(tmp_path):
+    """Edit-only turns that end over the limit (no call was held in them) count as one held unit each."""
+    a1 = Scripted(["x" * 12000] + [tool("edit_context", delete_turns=[{"first": 99, "last": 99}])] * 8)
+    a2 = Scripted(["."] * 6)
+    w = open_world(tmp_path, [a1, a2], "world.rounds=5", "world.max_calls_per_step=2", "world.end_over_limit=2",
+                   "ctx.count=turns")
+    w.run()
+    assert w.agents[0].end_reason == "over_limit" and w.agents[0].stats.get("held_turns", 0) == 2

@@ -8,7 +8,14 @@ tests/golden/extended.json was written by running `record` against the research 
 scripts, same settings); test_golden_ext checks SiamLM reproduces it exactly. `record` takes the implementation's
 compose, World and task modules, so the same code drives both.
 
-    python tests/golden_ext.py --write     # with SiamLM: only when a change of the requests is intended
+    python tests/golden_ext.py --write [--only=a,b,...]   # with SiamLM: only when a change of the requests is intended
+
+4 Nov 2026: 19 cases were re-recorded from SiamLM itself after two defects of the original harness were fixed (the
+arguments of a paired edit_context call now count toward the limit, as they are sent; a held call on a step's last
+call is no longer counted again by the turn's end: scripts/limit_defects.py, docs/experiments/2026-11-04-limit-
+accounting-defects.md). Those 19 entries are SiamLM's own regression fixtures from that date on. The 4 Docker cases
+(bash_named, bash_atomic_turns, bash_assigned_emptied, state_chain) and all of tests/golden/requests.json still hold
+byte parity with the original harness (their scripts make no edit_context call and set no end_over_limit).
 """
 from __future__ import annotations
 
@@ -175,6 +182,12 @@ def slm_record(names=None) -> dict:
 
 if __name__ == "__main__":
     if "--write" in sys.argv:
+        # --only a,b,...: re-record those cases only. The cases that are recorded are merged into the existing fixture,
+        # so cases skipped here (the Docker ones on a machine without Docker) keep their recorded entries.
+        only = next((a.split("=", 1)[1].split(",") for a in sys.argv if a.startswith("--only=")), None)
         FIXTURE.parent.mkdir(exist_ok=True)
-        FIXTURE.write_text(json.dumps(slm_record(), ensure_ascii=False, indent=0, sort_keys=True), encoding="utf-8")
-        print(f"-> {FIXTURE}")
+        gold = json.loads(FIXTURE.read_text(encoding="utf-8")) if FIXTURE.exists() else {}
+        new = slm_record(only)
+        gold.update(new)
+        FIXTURE.write_text(json.dumps(gold, ensure_ascii=False, indent=0, sort_keys=True), encoding="utf-8")
+        print(f"-> {FIXTURE}: re-recorded {sorted(new)}; kept {sorted(set(gold) - set(new))}")

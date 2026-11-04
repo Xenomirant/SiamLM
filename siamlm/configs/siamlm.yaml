@@ -79,7 +79,8 @@ world:
                              # turns (only agents' own edits change the context)
   end_over_limit: 0          # > 0 (needs evict=false): that many held calls in a row (or held replies, with no problem
                              # to work on), with no change that made the context smaller in between, end the agent's
-                             # session (ended.jsonl; like the CLM paper's over-limit end). The instructions say so
+                             # session (ended.jsonl; like the CLM paper's over-limit end). The instructions say so.
+                             # A turn that ends over the limit with nothing carried out and no held call in it counts as one
   after_stream: leave        # leave | stay (needs rounds): an agent whose stream is finished stays until the world
                              # ends, with no problem: it can edit and write messages (a reply without a tool call
                              # ends its turn; over the limit it is held, as a call is)

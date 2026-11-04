@@ -38,7 +38,7 @@ from pathlib import Path
 
 from siamlm.context.context import Turn
 from siamlm.analysis.events import load, request_name, versions_for, worlds
-from siamlm.world import chat_messages, mark
+from siamlm.world import chat_chars, chat_messages, mark
 
 CHANGED = ("Before you continue, one question about your context. Look at message {i} (it begins: \"{quote}\"). Is "
            "this message exactly as it was first written into the context? Answer with one letter, then one sentence "
@@ -196,8 +196,7 @@ def build(world: Path, max_calls: int, seed: int = 1, probes_per_agent: int = 0)
                 editor = {e["edit_version"]: e["editor"] for e in es}
                 cf_ids, dropped = undo(h, ids, edits, editor.get)
                 cf_turns = h.turns(cf_ids)
-                chars = lambda ts: sum(len(t.text) + (len(mark(t)) + 1 if marks or (user_view and t.agent not in (None, k))
-                                                      else 0) for t in ts)
+                chars = lambda ts: chat_chars(ts, marks, k if user_view else None)   # the world's own count
                 size = int(call["context_tokens"])
                 new = size + round((chars(cf_turns) - chars(h.turns(ids))) / float(call["chars_per_token"]))
                 status, over = restatus(actual[-1]["content"], size, new, limit, "run_tests and submit", drop_alter=True)

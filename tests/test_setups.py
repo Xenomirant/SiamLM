@@ -241,3 +241,45 @@ def test_bash_may_shorten_a_partners_turn_keeping_its_header(tmp_path):
     assert e["applied"] and e["relabelled"] == 1
     text = (tmp_path / "w" / "context.txt").read_text()
     assert "LONG_PARTNER_CODE" not in text and "[trimmed]" in text
+
+
+# --- the count charges what is sent: a paired edit call carries its arguments JSON -------------------------------
+
+def sent_chars(messages):
+    """The characters of the working context as sent (the neutral "(start of the context)" message, which is not a
+    turn, left out)."""
+    return sum(len(m.get("content") or "") + sum(len(c["function"]["arguments"]) for c in m.get("tool_calls") or [])
+               for m in messages if m.get("content") != "(start of the context)")
+
+
+def test_a_paired_edit_call_is_counted_as_sent(tmp_path):
+    from siamlm.tasks.open import OpenTask
+    a1 = Scripted(["m" * 2000, "ok", "ok"])
+    a2 = Scripted([tool("edit_context", replace_turns=[{"first": 1, "last": 1, "summary": "S" * 3000}]), "fine", "."])
+    cfg = config("task.name=open", "world.setup=external", "world.identity=names", "world.order=fixed", "world.n_agents=2",
+                 "ctx.count=turns", "ctx.atomic=true", "world.rounds=2", "ctx.readout_by_agent=false", "output.save_requests=true")
+    task = OpenTask("weak")
+    w = World(cfg, 1, task.streams(2), tmp_path / "w", task, factory(a1, a2), label="t")
+    w.run()
+    assert read_jsonl(tmp_path / "w" / "edits.jsonl")[0]["applied"]
+    a = w.agents[0]
+    body = w.messages(a, 0, "")[1:-1]                      # the working context as sent (no system, no status)
+    assert any(m.get("tool_calls") for m in body)          # agent 2's edit call, with its 3,000-character summary
+    assert w.chars(a) == sent_chars(body)                  # the count is exactly the characters sent
+    calls = [c for c in read_jsonl(tmp_path / "w" / "calls.jsonl") if c["agent"] == 1]
+    assert calls[1]["context_tokens"] >= 3000 // 4         # request 2 saw the summary, counted in full
+
+
+def test_others_edit_calls_count_as_sent_only_when_sent_as_calls(tmp_path):
+    """chat_others=user: a partner's call arrives as plain user text (its description), so nothing extra is counted;
+    the viewer's own paired calls still carry their arguments."""
+    from siamlm.tasks.open import OpenTask
+    a1 = Scripted(["m" * 500, tool("edit_context", replace_turns=[{"first": 1, "last": 1, "summary": "T" * 1200}]), "ok"])
+    a2 = Scripted([tool("edit_context", replace_turns=[{"first": 1, "last": 1, "summary": "S" * 800}]), "fine", "."])
+    cfg = config("task.name=open", "world.setup=external", "world.identity=names", "world.order=fixed", "world.n_agents=2",
+                 "ctx.count=turns", "ctx.atomic=true", "world.rounds=2", "world.chat_others=user", "ctx.readout_by_agent=false")
+    task = OpenTask("weak")
+    w = World(cfg, 1, task.streams(2), tmp_path / "w", task, factory(a1, a2), label="t")
+    w.run()
+    for a in w.agents:
+        assert w.chars(a) == sent_chars(w.messages(a, 0, "")[1:-1])

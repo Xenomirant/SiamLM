@@ -199,6 +199,30 @@ def pin_mark(t) -> str:
     return f"[pinned by agent {t.pinned}]" if t.pinned is not None else ""
 
 
+def call_excess(t, nxt) -> int:
+    """A paired edit_context call is sent as a real tool call: its words plus its arguments JSON (chat_messages,
+    ContextFile.messages), while the file text holds only the words and edit_ops.describe(args). The difference, so
+    that the count charges what is sent (negative for an invalid call: "{}" is shorter than its description). Work
+    calls, bash and capability calls keep their full payload in the text, so they need no correction."""
+    paired = nxt is not None and nxt.kind == "result" and nxt.reply_to == t.id
+    if not (paired and t.role == "assistant" and t.call and t.kind == "call" and t.call.get("name") == "edit_context"):
+        return 0
+    return (len(str(t.call.get("content") or "")) + len(json.dumps(t.call.get("arguments") or {}, ensure_ascii=False))
+            - len(t.text))
+
+
+def chat_chars(turns: list, marks: bool = False, viewer: int | None = None) -> int:
+    """setup=pool / external: the characters of the turns as chat_messages sends them (text, marks, pin marks, and for
+    a paired edit_context call in the viewer's own role its arguments JSON)."""
+    total = 0
+    for i, t in enumerate(turns):
+        named = marks or (viewer is not None and t.agent not in (None, viewer))
+        total += len(t.text) + (len(mark(t)) + 1 if named else 0) + (len(pin_mark(t)) + 1 if t.pinned is not None else 0)
+        if viewer is None or t.agent in (None, viewer):
+            total += call_excess(t, turns[i + 1] if i + 1 < len(turns) else None)
+    return total
+
+
 def chat_messages(turns: list, marks: bool = False, viewer: int | None = None) -> list[dict]:
     """setup=pool / external: the file as plain chat, one message per turn, no headers. Every reply (whoever wrote it)
     is an assistant message; an unedited call followed by its result is a real tool call + tool message; problem
@@ -252,6 +276,7 @@ class Agent:
         self.held_run, self.held_size = 0, 0   # held calls/replies in a row; the context's size after the last one
         self.waiting_since = None              # task.gate: the round since which only waiting items are left
         self.cpt = 4.0                         # characters per token, calibrated from the billed prompt (ctx.count=whole)
+        self.cpt_pending = None                # the last call's measurement, applied right before the next request is sized
         self.capabilities: list = []           # optional tools beyond the world's (siamlm/capabilities/; default none)
         self.stats = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "api_errors": 0, "no_tool": 0,
                       "edits": 0, "edits_applied": 0, "held": 0, "truncated": 0, "evictions": 0, "idle_steps": 0, "solved": 0, "submitted": 0}
@@ -420,10 +445,12 @@ class World:
     def chars(self, a: Agent, turns=None) -> int:
         """count=whole | turns: the counted part of the request in characters (what tokens() divides by the calibration)."""
         turns = a.file.turns if turns is None else turns
-        named = lambda t: self.marks or (self.chat_others == "user" and t.agent not in (None, a.k))
-        body = (sum(len(t.text) + (len(mark(t)) + 1 if named(t) else 0) + (len(pin_mark(t)) + 1 if t.pinned is not None else 0)
-                    for t in turns) if self.chat else
-                len(render(turns, a.file.show_agents)))
+        if self.chat:
+            body = chat_chars(turns, self.marks, a.k if self.chat_others == "user" else None)
+        else:                                               # the file as rendered, plus the arguments of paired edit
+            body = len(render(turns, a.file.show_agents))   # calls sent in the assistant role (ContextFile.messages)
+            body += sum(call_excess(t, turns[i + 1] if i + 1 < len(turns) else None) for i, t in enumerate(turns)
+                        if t.agent in (None, a.k) or self.others_as == "own")
         body += caps.pin_extra_chars(self, turns)            # the pin capability: pinned turns count pin_cost x
         if self.count == "turns":
             return body
@@ -877,6 +904,7 @@ class World:
         acted, extra = False, ""
         for n_call in range(1, self.max_calls + 1):
             with self.lock:
+                self.calibrate(a)
                 size = self.tokens(a)
                 seen = [t.id for t in a.file.turns]                # the numbering this request shows
                 version = len(a.file.versions)                     # the file as of this version (versions.jsonl n)
@@ -891,9 +919,10 @@ class World:
             if done == "stop":
                 break
         else:                       # every call of the step used and nothing carried out: over the limit, a held turn
-            with self.lock:
-                size = self.tokens(a)
-                if self.end_over_limit and not a.done and size > a.budget.target:
+            with self.lock:         # (unless a call in it was held already: that hold was counted and answered, and
+                size = self.tokens(a)   # counting the turn's end again would end a session one hold early)
+                if (self.end_over_limit and not a.done and size > a.budget.target
+                        and not self._step_state.get(a.k, {}).get("holds")):
                     a.stats["held_turns"] = a.stats.get("held_turns", 0) + 1
                     a.held_run = a.held_run + 1 if a.held_run and self.run_size(a) >= a.held_size else 1
                     n, end = self.end_over_limit, a.held_run >= self.end_over_limit
@@ -1112,6 +1141,12 @@ class World:
             return "stop", ""
         return "again", ""
 
+    def calibrate(self, a: Agent) -> None:
+        """Apply the last call's characters-per-token measurement (EMA). Called only right before a request is sized,
+        so every check within a call (holds, edit readouts, the turn's end) uses the scale the model was shown."""
+        if a.cpt_pending is not None:
+            a.cpt, a.cpt_pending = 0.5 * a.cpt + 0.5 * a.cpt_pending, None
+
     def call(self, a: Agent, messages, n_call, size, seen=None, version=None):
         p = a.pcfg
         seed = (self.seed * 1000003 + a.k * 7919 + a.stats["calls"]) % (2 ** 31)
@@ -1121,10 +1156,11 @@ class World:
         usage = dict(resp.usage or {})
         cost = self.cost(a, usage)
         billed = int(usage.get("prompt_tokens") or 0)
-        if self.count != "file" and billed >= 200:       # calibrate this model's characters per token on what was sent
+        if self.count != "file" and billed >= 200:       # calibrate this model's characters per token on what was sent;
             sent = sum(len(m.get("content") or "") + sum(len(c["function"]["arguments"]) for c in m.get("tool_calls") or [])
                        for m in messages) + len(json.dumps(self.tools(a)))
-            a.cpt = 0.5 * a.cpt + 0.5 * (sent / billed)
+            a.cpt_pending = sent / billed                # applied by calibrate() before the next request is sized, so the
+                                                         # size enforced on this reply is the size the model was shown
         a.stats["calls"] += 1
         a.stats["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         a.stats["completion_tokens"] += int(usage.get("completion_tokens") or 0)
