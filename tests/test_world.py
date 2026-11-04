@@ -107,7 +107,7 @@ def test_over_the_limit_work_is_held_then_evicted(tmp_path):
     big = "x" * 4000
     a1 = Scripted([tool("run_tests", code=big)] + [tool("run_tests", code="print('OK')")] * 4)
     w = world(tmp_path, [a1], [[problem(1)]], "world.n_agents=1", "ctx.budget_tokens=1400", "ctx.reserve_tokens=200", "ctx.count=file",
-              "world.max_held=2", "world.max_work_calls=3")
+              "ctx.tokenizer=chars", "world.max_held=2", "world.max_work_calls=3")   # chars/4: 4000 x's are ~16 o200k tokens
     w.run()
     calls = [c["tools"] for c in read_jsonl(tmp_path / "w" / "calls.jsonl")]
     assert len(calls) >= 4
