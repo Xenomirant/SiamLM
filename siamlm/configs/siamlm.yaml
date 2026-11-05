@@ -77,7 +77,7 @@ world:
   max_held: 3                # held work calls per step before the oldest unprotected turns are evicted
   evict: true               # false: after max_held holds the turn ends with nothing done; the harness never removes
                              # turns (only agents' own edits change the context). true (the default, kept for byte
-                             # identity with the earlier runs) is warned about at start-up: use +design=study
+                             # identity with the earlier runs) is warned about at start-up: use +preset=shared
   end_over_limit: 0          # > 0 (needs evict=false): that many held calls in a row (or held replies, with no problem
                              # to work on), with no change that made the context smaller in between, end the agent's
                              # session (ended.jsonl; like the CLM paper's over-limit end). The instructions say so.

@@ -65,6 +65,9 @@ def test_the_study_preset_composes_and_the_default_is_warned_about(tmp_path, cap
     from siamlm.world import World
     cfg = runner.compose(["+design=study"])
     assert (cfg.world.evict, cfg.world.end_over_limit, cfg.ctx.count, cfg.world.setup) == (False, 3, "turns", "external")
+    cfg = runner.compose(["+preset=shared"])
+    assert (cfg.world.evict, cfg.world.end_over_limit, cfg.ctx.count, cfg.world.setup, cfg.world.identity) == \
+        (False, 3, "turns", "external", "names")
     assert runner.compose([]).world.evict is True
     for overrides, warned in ((["world.n_agents=1"], True), (["world.n_agents=1", "world.evict=false"], False)):
         cfg = runner.compose(overrides)

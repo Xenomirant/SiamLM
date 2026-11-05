@@ -290,7 +290,7 @@ PROVIDERS = {"mock": lambda cfg: MockProvider(cfg.model), "openrouter": _openai_
 def make_provider(cfg):
     """Build the backend named by `provider.name`: mock, openrouter, openai (any OpenAI-compatible base_url), hf (a
     local Hugging Face model), or a dotted import path to a factory taking the provider config (e.g.
-    provider.name=my_package.providers.make_backend)."""
+    provider.name=mypackage.backends.make_backend)."""
     name = str(cfg.name)
     if name in PROVIDERS:
         return PROVIDERS[name](cfg)

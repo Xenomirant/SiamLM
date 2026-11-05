@@ -26,21 +26,26 @@ Requirements: Python 3.10+ (3.11+ for Harbor tasks), [uv](https://docs.astral.sh
 `state_chain`, Harbor tasks and the graders.
 
 ```bash
-uv sync && uv run pytest -q          # tests need no network and no key; Docker tests skip without Docker
+uv sync && uv run pytest -q          # no network, no key; Docker tests skip without Docker
 
-# 1. The offline mock backend: no network, no key, no Docker (the open task, edit_context)
-uv run python -m siamlm.run task.name=open world.setup=external world.identity=names world.rounds=6 output.batch=first
+# 1. Two agents in one shared context, offline (the mock backend: no network, key or Docker)
+uv run python -m siamlm.run +preset=shared task.name=open world.rounds=6
 
-# 2. A Harbor-format task, each item in its own container built from its Dockerfile (mock backend)
-uv run python -m siamlm.run task.name=harbor harbor.path=examples/harbor ctx.edit=bash world.setup=external \
-    world.identity=names world.relation=same output.save_requests=true output.batch=harbor
+# 2. Harbor-format tasks, each item in its own container (Docker); the example folder has one task, so both agents get it
+uv run python -m siamlm.run +preset=shared task.name=harbor harbor.path=examples/harbor world.relation=same ctx.edit=bash
 
-# 3. Your policy behind an OpenAI-compatible server (e.g. vLLM), then export its trajectories
-uv run python -m siamlm.run provider=openai provider.base_url=http://localhost:8000/v1 provider.model=my-policy \
-    task.name=state_chain ctx.edit=bash world.setup=external world.identity=names world.max_work_calls=1 \
-    world.rounds=14 world.evict=false world.end_over_limit=3 ctx.count=turns output.save_requests=true output.batch=rl
-uv run python -m siamlm.export outputs/siamlm/rl
+# 3. A model you serve with vLLM: run it, save every request, export trajectories for training
+vllm serve Qwen/Qwen2.5-3B-Instruct --enable-auto-tool-choice --tool-call-parser hermes     # in another shell
+uv run python -m siamlm.run +preset=shared provider=openai provider.model=Qwen/Qwen2.5-3B-Instruct \
+    task.name=state_chain ctx.edit=bash world.max_work_calls=1 output.save_requests=true output.batch=first_run
+uv run python -m siamlm.export outputs/siamlm/first_run
 ```
+
+`+preset=shared` sets `world.setup=external world.identity=names world.evict=false world.end_over_limit=3
+ctx.count=turns`: the agents are told about each other, the harness never removes turns (three held calls in a row
+end a session), and only the conversation counts against the limit. `provider.model` is the name the server serves
+(vLLM: the model id, or `--served-model-name`); `provider.base_url` defaults to `http://localhost:8000/v1`. Runs are
+written to `outputs/siamlm/<output.batch>/`.
 
 `docker build -t siamlm-sandbox:1 -f docker/sandbox.Dockerfile docker` builds the bash sandbox; the other images are
 listed in [docs/reference.md](docs/reference.md#docker-images). Every key of `siamlm/configs/siamlm.yaml` can be set on
@@ -86,7 +91,7 @@ from siamlm.providers import ProviderResponse
 from siamlm.run import build_task, compose
 from siamlm.world import World
 
-class EchoPolicy:                          # replace chat() with your model; messages are OpenAI chat messages
+class EchoBackend:                         # replace chat() with your model; messages are OpenAI chat messages
     model = "echo"
 
     def chat(self, messages, *, seed, temperature, top_p, max_tokens=None, tools=None, tool_choice=None):
@@ -94,15 +99,14 @@ class EchoPolicy:                          # replace chat() with your model; mes
                                 finish_reason="stop", retries=0, error=None, attempts=[],
                                 tool_calls=[])   # or [{"id": "c1", "name": "edit_context", "arguments": {...}}]
 
-cfg = compose(["task.name=open", "world.setup=external", "world.identity=names", "world.rounds=3",
-               "output.save_requests=true"])
+cfg = compose(["+preset=shared", "task.name=open", "world.rounds=3", "output.save_requests=true"])
 out = Path("outputs/demo/world_s1")
 task, streams = build_task(cfg, 1, out)
-World(cfg, 1, streams, out, task, make_provider=lambda pcfg: EchoPolicy(), label="demo").run()
+World(cfg, 1, streams, out, task, make_provider=lambda pcfg: EchoBackend(), label="demo").run()
 ```
 
-From the command line, `provider.name=my_package.make_policy` names a factory that takes the provider config and
-returns such an object.
+From the command line, `provider.name=mypackage.backends.make_backend` names a factory (any importable function)
+that takes the provider config and returns such an object.
 
 ## Write or plug in an environment
 
@@ -213,7 +217,8 @@ editing with atomic calls, turns-only counting, **one seed per cell**: single-se
 default the harness itself removes the oldest turns after `world.max_held` holds, which means a run measures the
 harness's eviction, not the agents' curation. The defaults are kept for byte-identity with earlier runs; the
 configuration the table above describes is `world.evict=false world.end_over_limit=3 ctx.count=turns`, and every
-design in `siamlm/sweep.py` sets it. `+design=study` on the command line sets it too (`siamlm/configs/design/study.yaml`), and a
+design in `siamlm/sweep.py` sets it. `+preset=shared` on the command line sets it too, with `world.setup=external
+world.identity=names` (`siamlm/configs/preset/shared.yaml`; the older `+design=study` sets the same without identity), and a
 run under the default prints a warning at start-up and records it in `world.json` (`warnings`).
 
 ## Citations

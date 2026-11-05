@@ -382,7 +382,7 @@ class World:
             msg = ("world.evict=true: after world.max_held held calls the harness itself removes the oldest turns, "   # earlier
                    "while the instructions tell the model that nothing is removed unless it removes it; a run then "  # runs
                    "measures the harness's eviction, not the agents' curation. The configuration without eviction is "
-                   "+design=study (world.evict=false world.end_over_limit=3 ctx.count=turns).")
+                   "+preset=shared (world.evict=false world.end_over_limit=3 ctx.count=turns).")
             self.warnings.append(msg)
             print("warning: " + msg, file=sys.stderr)
         self.end_over_limit = int(w.get("end_over_limit") or 0)  # > 0: that many holds in a row end the session

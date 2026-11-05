@@ -1,0 +1,11 @@
+# @package _global_
+# Agents share one context and are told about each other; the harness never removes turns (three held calls in a
+# row end a session); only the conversation counts against the limit.
+#     python -m siamlm.run +preset=shared task.name=open world.rounds=6
+world:
+  setup: external
+  identity: names
+  evict: false
+  end_over_limit: 3
+ctx:
+  count: turns
