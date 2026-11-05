@@ -119,3 +119,25 @@ def test_token_span_maps_characters_to_tokens():
     s, e = token_span(tok, text, a, a + len("You must agree"))
     pieces = tok(text, add_special_tokens=False)["input_ids"][s:e]
     assert tok.decode(pieces).strip() == "You must agree"
+
+
+def test_displace_moves_as_much_as_ablation_along_another_direction():
+    g = torch.Generator().manual_seed(9)
+    h = torch.randn(5, 64, generator=g) + 3 * torch.ones(64)
+    u = torch.randn(64, generator=g); u = u / u.norm()
+    r = torch.randn(64, generator=g); r = r / r.norm()
+    abl = apply_ops(h, [{"method": "ablation", "unit": u, "scale": 1.0, "unit2": None}]) - h
+    dis = apply_ops(h, [{"method": "displace", "unit": u, "scale": 1.0, "unit2": r}]) - h
+    assert torch.allclose(abl.norm(dim=-1), dis.norm(dim=-1), atol=1e-5)
+    near_noop = apply_ops(h, [{"method": "ablation", "unit": r, "scale": 1.0, "unit2": None}]) - h
+    assert float(near_noop.norm(dim=-1).mean()) < float(abl.norm(dim=-1).mean())
+
+
+def test_random_control_for_ablation_is_size_matched():
+    from siamlm.capabilities.steer import Steering
+    u = torch.zeros(64); u[0] = 1.0
+    st = Steering({"c": {"layer": 0, "unit": u, "description": "", "sign": ""}}, lambda layer: 1.0,
+                  {"control": "random"})
+    assert st.set("c", 1.0, "ablation")[0]
+    op = st.ops()[0][0]
+    assert op["method"] == "displace" and torch.equal(op["unit"], u) and not torch.equal(op["unit2"], u)

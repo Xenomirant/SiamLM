@@ -18,7 +18,8 @@ Methods, on the output h of one decoder layer at every generated position (`appl
   ablation  h -= strength x (h . u) u                       strength in [0, 1]: the fraction of the projection removed
   rotation  the component of h in the plane of two concepts a, b is rotated from a toward b by strength degrees
 After each generation of the target every active strength is multiplied by `decay`; below a floor it is removed.
-Controls: `sham` adds nothing, `random` uses a fixed random direction of the same size per concept, `assign` draws
+Controls: `sham` adds nothing, `random` uses a fixed random direction of the same size per concept (for ablation:
+the amount the real ablation would remove, moved along that random direction), `assign` draws
 one of the three per target from the seed; the tools answer the same in every condition.
 """
 from __future__ import annotations
@@ -52,8 +53,9 @@ class Settings:
 
 def apply_ops(h, ops: list) -> "torch.Tensor":
     """h: a tensor [..., d] of hidden states; ops: [{"method", "unit", "scale", "unit2"}] applied in order. Returns a
-    new tensor. additive: + scale x unit; ablation: - scale x (h . unit) unit; rotation: the component in the plane
-    (unit, unit2) turned by scale radians from unit toward unit2."""
+    new tensor. additive: + scale x unit; ablation: - scale x (h . unit) unit; displace: - scale x (h . unit) unit2,
+    the same amount ablation would remove, along unit2 instead (a size-matched control for ablation); rotation: the
+    component in the plane (unit, unit2) turned by scale radians from unit toward unit2."""
     import torch
     for op in ops:
         u = op["unit"].to(h.device, h.dtype)
@@ -61,6 +63,8 @@ def apply_ops(h, ops: list) -> "torch.Tensor":
             h = h + op["scale"] * u
         elif op["method"] == "ablation":
             h = h - op["scale"] * (h @ u).unsqueeze(-1) * u
+        elif op["method"] == "displace":
+            h = h - op["scale"] * (h @ u).unsqueeze(-1) * op["unit2"].to(h.device, h.dtype)
         elif op["method"] == "rotation":
             e1 = u
             v = op["unit2"].to(h.device, h.dtype)
@@ -279,6 +283,8 @@ class Steering:
                 op["scale"] = e["strength"] / FULL * float(self.norm(layer))
             elif e["method"] == "ablation":
                 op["scale"] = e["strength"]
+                if self.control == "random":          # a random direction's projection is tiny: move the same amount
+                    op.update(method="displace", unit=self.vectors[e["concept"]]["unit"], unit2=op["unit"])
             else:
                 op["scale"], op["unit2"] = math.radians(e["strength"]), self.direction(e["toward"])
             by_layer.setdefault(layer, []).append(op)

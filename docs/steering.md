@@ -72,7 +72,8 @@ uv run python -m siamlm.run provider=hf provider.model=Qwen/Qwen2.5-0.5B-Instruc
   read and answer.
 - **Self-reports need controls.** A model that says it "feels more curious" after a steer call may be answering the
   call's text, not the vector. `control: sham` (the same tools, the same results, nothing applied), `control: random`
-  (a fixed random direction of the same size per concept) and `control: assign` (one of real / sham / random per
+  (a fixed random direction of the same size per concept; for ablation, the amount the real ablation would remove,
+  moved along that random direction, since a random direction's own projection is close to zero) and `control: assign` (one of real / sham / random per
   target, drawn from the seed) are the controls. When `control` is set, every agent is told the same sentence in
   every condition (steering may be real, a sham or random; it is not told which); the condition is never shown and is
   logged per call (`steering.jsonl`, `condition`). Compare behaviour, not only words.
