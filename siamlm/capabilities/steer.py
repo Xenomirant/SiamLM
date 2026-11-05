@@ -77,6 +77,69 @@ def apply_ops(h, ops: list) -> "torch.Tensor":
     return h
 
 
+@contextmanager
+def at_positions(lm, spans: list):
+    """Forward hooks that apply operations to a decoder layer's output at absolute positions of the sequence, in any
+    forward pass while the context is open: a full forward, a prefill with or without a cached prefix, generation.
+
+    spans: [{"layer": int, "start": int, "end": int, "ops": [...] (as apply_ops), "rows": None | [batch indices]}];
+    positions count from the first token of the sequence and `end` is exclusive. Positions are read from the
+    layer's `cache_position` (so a prefill after a cached prefix lands on the right tokens), else counted from 0 over
+    the calls since the context opened. Every later position is computed from the changed states; earlier ones are
+    untouched. The output is a new tensor, so gradients reach tensors in `ops`. Hooks are removed on exit."""
+    import torch
+    by_layer: dict = {}
+    for sp in spans:
+        if int(sp["end"]) > int(sp["start"]) and sp.get("ops"):
+            by_layer.setdefault(int(sp["layer"]), []).append(sp)
+    handles = []
+
+    def make(layer_spans):
+        seen = {"pos": 0}
+
+        def hook(module, args, kwargs, output):
+            hidden = output[0] if isinstance(output, tuple) else output
+            n = hidden.shape[1]
+            cp = kwargs.get("cache_position")
+            p0 = int(cp[0]) if cp is not None and len(cp) else seen["pos"]
+            seen["pos"] = p0 + n
+            new = None
+            for sp in layer_spans:
+                a, b = max(int(sp["start"]) - p0, 0), min(int(sp["end"]) - p0, n)
+                if a >= b:
+                    continue
+                if new is None:
+                    new = hidden.clone()
+                rows = sp.get("rows")
+                if rows is None:
+                    new[:, a:b] = apply_ops(new[:, a:b], sp["ops"])
+                else:
+                    idx = torch.as_tensor(rows, device=new.device)
+                    new[idx, a:b] = apply_ops(new[idx, a:b], sp["ops"])
+            if new is None:
+                return None
+            return (new, *output[1:]) if isinstance(output, tuple) else new
+        return hook
+
+    try:
+        for layer, layer_spans in by_layer.items():
+            handles.append(lm.model.layers[layer].register_forward_hook(make(layer_spans), with_kwargs=True))
+        yield
+    finally:
+        for h in handles:
+            h.remove()
+
+
+def token_span(tokenizer, text: str, start_char: int, end_char: int) -> tuple[int, int]:
+    """The tokens of `text` (tokenized without special tokens added) that overlap characters [start_char, end_char):
+    (first token, one past the last). For mapping a quoted anchor or a turn in a rendered prompt to positions."""
+    enc = tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+    hit = [i for i, (a, b) in enumerate(enc["offset_mapping"]) if a < end_char and b > start_char]
+    if not hit:
+        raise ValueError(f"no token overlaps characters {start_char}:{end_char}")
+    return hit[0], hit[-1] + 1
+
+
 def key_of(concept: str, method: str, toward: str | None) -> str:
     return concept if method == "additive" else f"{method}:{concept}" + (f"->{toward}" if toward else "")
 
