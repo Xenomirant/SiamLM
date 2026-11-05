@@ -83,13 +83,11 @@ An agent is three things; the world assembles them for every call (every call is
   else is there, the limit and what happens over it, how others' turns look). Run with `output.save_requests=true`
   to read every request exactly as sent (`requests/`).
 
-A backend is any object with one method (the `Backend` protocol in `siamlm/providers/base.py`):
+A backend is any object with one method (the `Backend` protocol in `siamlm/providers/base.py`), plus a function
+that builds it from the provider config. Saved as `echo_backend.py`:
 
 ```python
-from pathlib import Path
 from siamlm.providers import ProviderResponse
-from siamlm.run import build_task, compose
-from siamlm.world import World
 
 class EchoBackend:                         # replace chat() with your model; messages are OpenAI chat messages
     model = "echo"
@@ -99,14 +97,20 @@ class EchoBackend:                         # replace chat() with your model; mes
                                 finish_reason="stop", retries=0, error=None, attempts=[],
                                 tool_calls=[])   # or [{"id": "c1", "name": "edit_context", "arguments": {...}}]
 
-cfg = compose(["+preset=shared", "task.name=open", "world.rounds=3", "output.save_requests=true"])
-out = Path("outputs/demo/world_s1")
-task, streams = build_task(cfg, 1, out)
-World(cfg, 1, streams, out, task, make_provider=lambda pcfg: EchoBackend(), label="demo").run()
+def make_backend(provider_cfg):
+    return EchoBackend()
 ```
 
-From the command line, `provider.name=mypackage.backends.make_backend` names a factory (any importable function)
-that takes the provider config and returns such an object.
+Run it from the folder that holds the file (`provider.name` is the import path of the function; `provider.model` is
+the name written into the logs):
+
+```bash
+uv run python -m siamlm.run +preset=shared task.name=open world.rounds=3 \
+    provider.name=echo_backend.make_backend provider.model=echo
+```
+
+Or from Python, with `World(cfg, seed, streams, out, task, make_provider=make_backend)` (`siamlm.run.build_task`
+gives the task and its streams; `siamlm.run.compose` the config).
 
 ## Write or plug in an environment
 
