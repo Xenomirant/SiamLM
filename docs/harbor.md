@@ -43,8 +43,13 @@ From `src/harbor/models/task/paths.py`, `src/harbor/models/task/config.py` and `
 ## What `task.name=harbor` does
 
 ```bash
-uv run python -m siamlm.run task.name=harbor harbor.path=examples/harbor ctx.edit=bash world.setup=external \
-    world.identity=names world.relation=same provider=mock output.batch=harbor
+# Two agents on the example task, mock backend (needs Docker)
+uv run python -m siamlm.run +preset=shared \
+    task.name=harbor harbor.path=examples/harbor \
+    world.relation=same \
+    ctx.edit=bash \
+    provider=mock \
+    output.batch=harbor
 ```
 
 - Each Harbor task under `harbor.path` is one item. Streams: the tasks shuffled by the seed, `harbor.per_agent` per

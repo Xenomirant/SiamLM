@@ -26,18 +26,34 @@ Requirements: Python 3.10+ (3.11+ for Harbor tasks), [uv](https://docs.astral.sh
 `state_chain`, Harbor tasks and the graders.
 
 ```bash
-uv sync && uv run pytest -q          # no network, no key; Docker tests skip without Docker
+# Install, then run the tests (no network, no key; Docker tests skip without Docker)
+uv sync
+uv run pytest -q
 
-# 1. Two agents in one shared context, offline (the mock backend: no network, key or Docker)
-uv run python -m siamlm.run +preset=shared task.name=open world.rounds=6
+# 1. Two agents in one shared context, offline
+#    (the mock backend: no network, key or Docker)
+uv run python -m siamlm.run +preset=shared \
+    task.name=open \
+    world.rounds=6
 
-# 2. Harbor-format tasks, each item in its own container (Docker); the example folder has one task, so both agents get it
-uv run python -m siamlm.run +preset=shared task.name=harbor harbor.path=examples/harbor world.relation=same ctx.edit=bash
+# 2. Harbor-format tasks, each item in its own container (needs Docker)
+#    The example folder has one task, so both agents get the same one.
+uv run python -m siamlm.run +preset=shared \
+    task.name=harbor harbor.path=examples/harbor \
+    world.relation=same \
+    ctx.edit=bash
 
-# 3. A model you serve with vLLM: run it, save every request, export trajectories for training
-vllm serve Qwen/Qwen2.5-3B-Instruct --enable-auto-tool-choice --tool-call-parser hermes     # in another shell
-uv run python -m siamlm.run +preset=shared provider=openai provider.model=Qwen/Qwen2.5-3B-Instruct \
-    task.name=state_chain ctx.edit=bash world.max_work_calls=1 output.save_requests=true output.batch=first_run
+# 3a. A model of your own: serve it with vLLM (in another shell)
+vllm serve Qwen/Qwen2.5-3B-Instruct \
+    --enable-auto-tool-choice --tool-call-parser hermes
+
+# 3b. Two agents on it, every request saved
+uv run python -m siamlm.run +preset=shared \
+    provider=openai provider.model=Qwen/Qwen2.5-3B-Instruct \
+    task.name=state_chain ctx.edit=bash world.max_work_calls=1 \
+    output.save_requests=true output.batch=first_run
+
+# 3c. Export the trajectories for training
 uv run python -m siamlm.export outputs/siamlm/first_run
 ```
 
@@ -101,12 +117,14 @@ def make_backend(provider_cfg):
     return EchoBackend()
 ```
 
-Run it from the folder that holds the file (`provider.name` is the import path of the function; `provider.model` is
-the name written into the logs):
+`provider.name` is the import path of the function; `provider.model` is the name written into the logs:
 
 ```bash
-uv run python -m siamlm.run +preset=shared task.name=open world.rounds=3 \
-    provider.name=echo_backend.make_backend provider.model=echo
+# From the folder that holds echo_backend.py
+uv run python -m siamlm.run +preset=shared \
+    task.name=open world.rounds=3 \
+    provider.name=echo_backend.make_backend \
+    provider.model=echo
 ```
 
 Or from Python, with `World(cfg, seed, streams, out, task, make_provider=make_backend)` (`siamlm.run.build_task`

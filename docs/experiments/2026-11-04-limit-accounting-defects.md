@@ -10,8 +10,13 @@ Python 3.12, SiamLM 0.1.0. Runtime: about 1 minute per run.
 
 **Command.**
 ```
-uv run python scripts/limit_defects.py docs/experiments/2026-11-04-limit-accounting-defects.before.json   # at 14a952c
-uv run python scripts/limit_defects.py docs/experiments/2026-11-04-limit-accounting-defects.after.json    # at 62a003a
+# Before the fix: at commit 14a952c
+uv run python scripts/limit_defects.py \
+    docs/experiments/2026-11-04-limit-accounting-defects.before.json
+
+# After the fix: at commit 62a003a
+uv run python scripts/limit_defects.py \
+    docs/experiments/2026-11-04-limit-accounting-defects.after.json
 ```
 
 **Method.** Three two-agent open-task worlds (`task.name=open world.setup=external world.identity=names

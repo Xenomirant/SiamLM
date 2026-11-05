@@ -7,11 +7,20 @@ backend). It is **off by default**, and nothing about an agent without it change
 settings". [docs/capabilities.md](capabilities.md) places it among the other capabilities.
 
 ```bash
-uv pip install torch --index-url https://download.pytorch.org/whl/cpu    # CPU torch first (omit the index for CUDA)
-uv pip install -e ".[steer]"                                              # transformers + Modulo (pinned)
-uv run python -m siamlm.run provider=hf provider.model=Qwen/Qwen2.5-0.5B-Instruct provider.max_tokens=200 \
-    capabilities.steer.self=true capabilities.steer.others=true capabilities.steer.notice=private \
-    task.name=open world.setup=external world.identity=names world.rounds=10
+# CPU torch first (leave out --index-url for CUDA)
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+# transformers and Modulo (pinned)
+uv pip install -e ".[steer]"
+
+# Two agents on one local model; each may steer itself and the other,
+# and a steered agent is told so privately
+uv run python -m siamlm.run +preset=shared \
+    provider=hf provider.model=Qwen/Qwen2.5-0.5B-Instruct provider.max_tokens=200 \
+    capabilities.steer.self=true \
+    capabilities.steer.others=true \
+    capabilities.steer.notice=private \
+    task.name=open world.rounds=10
 ```
 
 ## How it works
