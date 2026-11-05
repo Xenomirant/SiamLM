@@ -1,4 +1,4 @@
-"""Launch the cells of a study design, one background process per cell (each runs its seeds in parallel).
+"""Launch the cells of a sweep design, one background process per cell (each runs its seeds in parallel).
 
     python -m siamlm.sweep --design s1b --batch s1b_pilot --seeds 1 --dry-run      # print the commands only
     OPENROUTER_API_KEY=... python -m siamlm.sweep --design s1b --batch s1b_pilot --seeds 1 2 3
@@ -152,7 +152,7 @@ def study(a) -> list[tuple[str, list[str]]]:
                     out.append((f"{body}_{level}_{pres}", pair(body, budget(body)) + over
                                 + ["task.name=open", f"task.level={level}", "world.continuity=false"]))
         return out
-    raise SystemExit(f"unknown study design {a.design}")
+    raise SystemExit(f"unknown design {a.design}")
 
 
 def parse_args(argv=None) -> argparse.Namespace:

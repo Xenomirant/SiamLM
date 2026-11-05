@@ -1,0 +1,81 @@
+{
+ "provenance": {
+  "python": "3.12.3",
+  "siamlm": "0.1.0",
+  "git": "14a952c",
+  "argv": [
+   "docs/experiments/2026-11-04-limit-accounting-defects.before.json"
+  ],
+  "started": "2026-11-04 02:30:00 UTC"
+ },
+ "settings": [
+  "task.name=open",
+  "world.setup=external",
+  "world.identity=names",
+  "world.order=fixed",
+  "world.n_agents=2",
+  "ctx.edit=tool",
+  "ctx.atomic=true",
+  "ctx.count=turns",
+  "ctx.readout_by_agent=false",
+  "world.evict=false",
+  "world.end_over_limit=3",
+  "world.max_edit_calls=5",
+  "output.save_requests=true",
+  "ctx.budget_tokens=2500",
+  "ctx.reserve_tokens=300"
+ ],
+ "A": {
+  "request_2_status": "~2001/2200",
+  "shown_tokens": 2001,
+  "limit": 2200,
+  "shown_under_limit": true,
+  "chars_per_token_at_request_2": 3.0,
+  "chars_per_token_at_request_3": 2.5,
+  "held_after_request_2": [
+   "2670",
+   "2200"
+  ],
+  "same_call_held": true,
+  "request_3_status": "~2734/2200 over",
+  "held_after_request_3": [
+   "3283",
+   "2200"
+  ],
+  "held_replies": 3
+ },
+ "B": {
+  "edit_applied": true,
+  "sent_body_chars": 6141,
+  "arguments_chars_in_request": 3059,
+  "counted_chars": 3092,
+  "uncounted_share": 0.496,
+  "context_tokens_logged": 773,
+  "tokens_if_counted_as_sent": 1536
+ },
+ "C": {
+  "held_reply_notices": 4,
+  "turn_end_notices": [
+   "turn ended over the limit of 2200 tokens (~3098), with no more calls left in it. That is 3 held in a row: agent 2's session has ended.]",
+   "turn ended over the limit of 2200 tokens (~3231), with no more calls left in it. That is 3 held in a row: agent 1's session has ended.]"
+  ],
+  "ended": {
+   "round": 2,
+   "agent": 1,
+   "model": "mock-random",
+   "reason": "over_limit",
+   "tokens": 3268,
+   "limit": 2200,
+   "held_in_a_row": 3
+  },
+  "held_replies": 2,
+  "calls_made_by_agent_1": 3,
+  "ended_after_held_replies": 2
+ },
+ "defects": {
+  "A_told_under_then_held": true,
+  "B_arguments_uncounted": true,
+  "C_double_counted_hold": true
+ },
+ "worlds": "/tmp/limit_defects_77fmymul"
+}

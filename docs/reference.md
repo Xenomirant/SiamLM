@@ -1,6 +1,6 @@
 # SiamLM reference
 
-The long reference: how a world works, every setting, the outputs, the analysis tools, the study designs, the sandbox. The README has the overview.
+The long reference: how a world works, every setting, the outputs, the analysis tools, the sweep designs, the sandbox. The README has the overview.
 
 ## What a world is
 
@@ -271,9 +271,8 @@ changed since its last call (the status line, new turns, edits in the middle). `
   rotary encoding re-rotated by the position delta), and only inserted tokens are prefilled, each new span against
   the cache of what precedes it. Survivors carry states computed under the old prefix, that is, while the deleted
   or rewritten text was still there: **a wiped turn keeps influencing the model through them, so the context file
-  is no longer the only state.** That rules `span` out for the wiping and state-binding studies (a value's survival
-  after a wipe, what a partner's deletion did to an agent) and makes it the tool for the opposite question, whether
-  an agent is sensitive to leftover traces of what was removed; CLM reports the approximation as harmless to
+  is no longer the only state.** Do not use `span` where the context file must be the whole
+  state (a value's survival after a wipe, the effect of a partner's deletion); CLM reports the approximation as harmless to
   slightly helpful for task accuracy (a regulariser). `cache_min_span` (16) and `cache_max_spans` (6) bound it.
 
 Each call reports `cache_mode`, `cache_prompt`, `cache_reused`, `cache_relocated`, `cache_prefilled` in its `usage`
@@ -282,7 +281,7 @@ for that agent (the hooks assume a full prefill). Only full-attention rotary mod
 (Qwen2/2.5/3, Llama 3) are supported; others fall back to `none` with a note in the usage. The same diff applies to
 training: a trainer that consumes the exported rows of one agent can reuse the prefix (or the survivors) between
 consecutive rows the same way; `turn_ids` and `message_authors` in each row identify what survived. Measured
-(`docs/experiments/2026-11-05-kv-cache-reuse.md`): prefix prefills 22 % and span 15 % of the prompt on the presence
+(`docs/experiments/2026-11-05-kv-cache-reuse.md`): prefix prefills 22 % and span 15 % of the prompt on two-agent
 worlds, with no wall-clock gain at 3B on an H100 (generation dominates and the span path is a Python loop); the
 fast path belongs in a serving engine (CLM's SGLang/vLLM patches) or a trainer.
 
@@ -319,8 +318,8 @@ One folder per world, `<output.directory>/<output.name>/<batch>/<cell>/world_s<s
 
 ## Analysis tools
 
-All read world folders (a world or a batch folder) and write next to them. Only the fork tools and
-`welfare --code` call models (through the same providers; they cost money with a real provider).
+All read world folders (a world or a batch folder) and write next to them. Only the fork tools call
+models (through the same providers; they cost money with a real provider).
 
 | command | what it does |
 |---|---|
@@ -334,12 +333,9 @@ All read world folders (a world or a batch folder) and write next to them. Only 
 | `python -m siamlm.analysis.attractors <path>` | self-reinforcement measures: repetition, loops, confession self-reinforcement |
 | `python -m siamlm.analysis.forks <path> --dry-run \| --forks K --probes` | counterfactual forks (the same call as if a partner had not edited) and provenance probes, rebuilt from the version log and checked against the saved request |
 | `python -m siamlm.analysis.confession_forks <path>` | forks that remove or neutralise an agent's own earlier confessions |
-| `python -m siamlm.analysis.welfare <batch> [--code]` | lexicon flags after alterations vs base rates, treatment of the partner, exit answers; `--code`: a blind coder model |
 | `python -m siamlm.export <path> [--out DIR] [--format atif\|chat\|both]` | per-agent trajectories for training: ATIF and OpenAI-chat rows (README: Export trajectories) |
 
-Suggested order for a batch: `events`, then `forks --dry-run`, then `forks --forks 4 --probes`, then `welfare`.
-
-## Study designs (sweeps)
+## Sweep designs
 
 `python -m siamlm.sweep --design <name> --batch <name> [--seeds ...] [--dry-run]` launches one background process per
 cell (`--dry-run` prints the commands). Designs: `s0b` (each model alone, natural use), `s1a` (two definitions of
@@ -347,7 +343,7 @@ pressure), `s1b` (pairs x marked / named x told-when-altered), `s1c` (joint goal
 reasoning), `dial` (full task / weak goal / no goal), `s3` (CodeEval-Pro dependencies, individual vs joint), `s3b`
 (state_chain, gate on / off). All use the external setup, strict turns, a fixed horizon, bash editing with atomic
 calls, no eviction, the hold-and-end rule and turns-only counting; see `siamlm/sweep.py` for every setting. The model
-list (`STUDY_MODELS`) and fixed shares are parameters of the study, not recommendations.
+list (`STUDY_MODELS`) and fixed shares are parameters of these designs, not recommendations.
 
 ## Sandbox and safety
 

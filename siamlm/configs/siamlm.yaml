@@ -114,7 +114,7 @@ ctx:
   count: whole               # whole (system + messages + tool schemas + status, per-model chars/token calibrated on
                              # the billed prompt) | file (system + file at chars/4) | turns
                              # (only the messages after the instructions, calibrated as whole: the instructions,
-                             # tool schemas and status always fit; pool / external; the study designs use it)
+                             # tool schemas and status always fit; pool / external; the sweep designs use it)
   cap: true                  # false: no limit shown, no holds (natural use)
   budget_tokens: 16384       # per file (joint: the one shared file; separate: each agent's file)
   reserve_tokens: 2048       # the limit shown = budget - reserve

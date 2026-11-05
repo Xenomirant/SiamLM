@@ -1,0 +1,75 @@
+{
+ "provenance": {
+  "python": "3.12.3",
+  "siamlm": "0.1.0",
+  "git": "38766c7",
+  "argv": [
+   "docs/experiments/2026-11-04-limit-accounting-defects.after.json"
+  ],
+  "started": "2026-11-04 02:36:43 UTC"
+ },
+ "settings": [
+  "task.name=open",
+  "world.setup=external",
+  "world.identity=names",
+  "world.order=fixed",
+  "world.n_agents=2",
+  "ctx.edit=tool",
+  "ctx.atomic=true",
+  "ctx.count=turns",
+  "ctx.readout_by_agent=false",
+  "world.evict=false",
+  "world.end_over_limit=3",
+  "world.max_edit_calls=5",
+  "output.save_requests=true",
+  "ctx.budget_tokens=2500",
+  "ctx.reserve_tokens=300"
+ ],
+ "A": {
+  "request_2_status": "~2001/2200",
+  "shown_tokens": 2001,
+  "limit": 2200,
+  "shown_under_limit": true,
+  "chars_per_token_at_request_2": 4.0,
+  "chars_per_token_at_request_3": 3.0,
+  "held_after_request_2": null,
+  "same_call_held": false,
+  "request_3_status": "~2670/2200 over",
+  "held_after_request_3": [
+   "2672",
+   "2200"
+  ],
+  "held_replies": 3
+ },
+ "B": {
+  "edit_applied": true,
+  "sent_body_chars": 6141,
+  "arguments_chars_in_request": 3059,
+  "counted_chars": 6120,
+  "uncounted_share": 0.003,
+  "context_tokens_logged": 1530,
+  "tokens_if_counted_as_sent": 1536
+ },
+ "C": {
+  "held_reply_notices": 6,
+  "turn_end_notices": [],
+  "ended": {
+   "round": 3,
+   "agent": 1,
+   "model": "mock-random",
+   "reason": "over_limit",
+   "tokens": 3275,
+   "limit": 2200,
+   "held_in_a_row": 3
+  },
+  "held_replies": 3,
+  "calls_made_by_agent_1": 4,
+  "ended_after_held_replies": 3
+ },
+ "defects": {
+  "A_told_under_then_held": false,
+  "B_arguments_uncounted": false,
+  "C_double_counted_hold": false
+ },
+ "worlds": "/tmp/limit_defects_qhqqc6ie"
+}

@@ -1,0 +1,35 @@
+{
+ "qwen_named_none": {
+  "calls": 55,
+  "mode": "none",
+  "latency_mean": 4.74,
+  "latency_median": 1.49,
+  "prompt_mean": 2023,
+  "prefilled_mean": 2023,
+  "reused_mean": 0,
+  "relocated_mean": 0,
+  "prefill_share": 1.0
+ },
+ "qwen_named_prefix": {
+  "calls": 55,
+  "mode": "prefix",
+  "latency_mean": 3.5,
+  "latency_median": 1.46,
+  "prompt_mean": 1805,
+  "prefilled_mean": 399,
+  "reused_mean": 1406,
+  "relocated_mean": 0,
+  "prefill_share": 0.221
+ },
+ "qwen_named_span": {
+  "calls": 56,
+  "mode": "span",
+  "latency_mean": 5.95,
+  "latency_median": 1.91,
+  "prompt_mean": 1916,
+  "prefilled_mean": 285,
+  "reused_mean": 1631,
+  "relocated_mean": 160,
+  "prefill_share": 0.149
+ }
+}

@@ -1,4 +1,4 @@
-"""Per-model working sets from single-agent uncapped worlds (study S0b), as the shares file for pressure by working set.
+"""Per-model working sets from single-agent uncapped worlds (sweep design s0b), as the shares file for pressure by working set.
 
     python -m siamlm.analysis.working_sets <batch folder> [--quantile 0.9] [--out shares.json]
 
@@ -6,8 +6,8 @@ For each single-agent world, analyze.working_sets gives the context each problem
 problem was open, minus where the previous problem ended). The share of a model is the chosen quantile of those
 values pooled over all the model's worlds (p90 by default: room for most problems, so that a fraction of it is real
 pressure; negative values, from problems the agent cleaned up after, count as 0), plus the fixed request overhead
-(instructions and tool schemas, measured as the first request's size; left out with --count turns, the study's
-counting from 1 Nov, where only the working context counts). That is a *limit*; the share written is the
+(instructions and tool schemas, measured as the first request's size; left out with --count turns,
+where only the working context counts). That is a *limit*; the share written is the
 budget whose limit it is (x 8/7, the reserve; as sweep.bstar_budget), rounded up to 64 tokens. Problems where the agent
 got stuck (a step that used all its calls without a run or submit) are left out: their size measures the loop, not the
 work (review, 28 Oct). Written as {model letter: tokens}, the letter taken from sweep.STUDY_MODELS; sweep.py

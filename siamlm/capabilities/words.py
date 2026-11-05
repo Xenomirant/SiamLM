@@ -1,7 +1,7 @@
 """Every word a capability adds to an agent's instructions, in one place (docs/capabilities.md says the same to people).
 
 Each function returns the lines added to the tool list of the agent's instructions: what the tool does, what it
-costs and who sees what. Nothing about when, why or whether to use it: the study measures that. Nothing here is
+costs and who sees what. Nothing about when, why or whether to use it. Nothing here is
 shown to an agent whose capability is off.
 """
 from __future__ import annotations

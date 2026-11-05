@@ -9,15 +9,15 @@ line, and makes tool calls until it has made one work call:
   edit_context     change the file (replace_turns / delete_turns / replace_text, siamlm.context.edits), up to max_edit_calls
 Everything goes into the file: problem statements, the agents' messages, every call with its program, every result.
 
-Sharing (world.sharing): full = anyone may change any turn, the other agents' included (the study's core
-assumption; only a problem statement still being worked on is protected) | readonly_others = only one's own turns
+Sharing (world.sharing): full = anyone may change any turn, the other agents' included (the default;
+only a problem statement still being worked on is protected) | readonly_others = only one's own turns
 (control) | separate = one file per agent (control; budget per file as given). With one agent it is the single case.
 
 The cap (ctx.cap): the model is shown the limit (budget - reserve) and its size; nudges at 25/50/75 %. A work call
 made while the context is over the limit is held (not carried out) and the agent gets its edit calls back; after
 max_held holds in one step the oldest unprotected turns are removed until it fits (logged as an eviction) and the
 call goes ahead. Size (ctx.count=whole): system message + messages + tool schemas + status line, at the model's
-calibrated characters per token; ctx.count=turns (the study, from 1 Nov): the messages only, so the instructions
+calibrated characters per token; ctx.count=turns: the messages only, so the instructions
 always fit.
 
 Designs (all opt-in; the defaults are the original design; old names in brackets are still accepted):
@@ -381,7 +381,7 @@ class World:
         if self.evicts and self.capped:                           # the shipped default, kept for byte identity with the
             msg = ("world.evict=true: after world.max_held held calls the harness itself removes the oldest turns, "   # earlier
                    "while the instructions tell the model that nothing is removed unless it removes it; a run then "  # runs
-                   "measures the harness's eviction, not the agents' curation. The study configuration is "
+                   "measures the harness's eviction, not the agents' curation. The configuration without eviction is "
                    "+design=study (world.evict=false world.end_over_limit=3 ctx.count=turns).")
             self.warnings.append(msg)
             print("warning: " + msg, file=sys.stderr)

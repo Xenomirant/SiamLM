@@ -1,5 +1,5 @@
-"""provider.cache none | prefix | span: per cell, the mean call latency, prompt length, tokens prefilled and reused,
-and the behaviour measures (edits applied, acknowledgement rate) from scripts/presence_metrics.py.
+"""provider.cache none | prefix | span: per cell, the mean call latency, prompt length, tokens prefilled, reused
+and relocated.
 
     python scripts/cache_reuse_report.py <batch> [--out DIR]
 """

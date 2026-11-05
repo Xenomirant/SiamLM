@@ -2,22 +2,18 @@
 
 Every experiment in this folder is meant to be rerun by someone who has only this repository. Each has:
 
-- `YYYY-MM-DD-<name>.md`: purpose and hypothesis; hardware and software; the exact command; every input (or the
-  generator and its seed); metric definitions with formulas; the result table; runtime; caveats; what a rerun should
-  reproduce and to what tolerance.
+- `YYYY-MM-DD-<name>.md`: the question; hardware and software; the exact command; every input (or the generator and
+  its seed); metric definitions; the result table; runtime; caveats; what a rerun should reproduce and to what
+  tolerance.
 - `YYYY-MM-DD-<name>.json`: the raw output of that run, with a `provenance` block (model id and snapshot hash,
-  library versions, threads, dtype, device, CPU, git commit, command line, start time) and the inputs the script used.
-- The script in `scripts/`, which writes that JSON. Scripts print one line per condition as they go.
+  library versions, threads, dtype, device, git commit, command line, start time) and the inputs the script used.
+- The script in `scripts/` that writes that JSON.
 
-Conventions: CPU runs use `torch.set_num_threads(16)` and float32; greedy decoding everywhere; the model is named by
-its Hugging Face id and snapshot hash; random inputs come from a seeded generator written in the script; nothing is
-read from the network at run time (`local_files_only`). A result that depends on a number not in the JSON or the
-markdown is a bug in the record.
+Conventions: greedy decoding; the model is named by its Hugging Face id and snapshot hash; random inputs come from
+a seeded generator written in the script; nothing is read from the network at run time. A result that depends on a
+number not in the JSON or the markdown is a bug in the record.
 
 | date | experiment | question | answer |
 |---|---|---|---|
-| 2026-11-03 | [meter calibration](2026-11-03-meter-calibration.md) | which meter of a weight edit tracks its behavioural effect: weight distance or output change? | output change (Spearman 0.94 with KL) over relative Frobenius (0.82); targeted edits are where they part |
-| 2026-11-03 | [activation-message probe](2026-11-03-activation-message-probe.md) | do a sender's residuals written into a receiver's prompt carry the span's words? the sender's context? | the words, up to mid-depth (layers ≤ 8 at or above the text control; nothing from layer 16); the context, not at all |
-| 2026-11-03 | [vector messages](2026-11-03-vector-messages.md) | can k optimised input vectors carry a message to the same frozen 0.5B model, and can it use them without decoding? | 1 vector carries 27 tokens of notes, 4 carry 123; use without decoding 0 of 22, decode-then-answer equals text |
-| 2026-11-03 | [vector messages, injected](2026-11-03-vector-messages-inject.md) | can the receiver use vectors injected into its residual stream at layer L, optimised for use rather than reconstruction? | trained questions 36/36, held-out 0/36 at every layer and objective; reconstruction lossless at every layer; reading in place needs a trained receiver |
-| 2026-11-03 | [vector messages, regularised](2026-11-03-vector-messages-regularised.md) | is the lookup-table result overfitting? held-out curve, many questions, anchoring to real residuals | no peak to stop at; many+anchoring give 15/18 on unseen paraphrases but 0/45 on an unseen fact; pooled real residuals read 2/60 |
+| 2026-11-04 | [limit accounting defects](2026-11-04-limit-accounting-defects.md) | does the harness enforce the limit it shows? three defects reproduced with a scripted backend, before and after the fix | before: told under then held, 50 % of an edit-heavy context uncounted, a session ended one hold early; after: none |
+| 2026-11-05 | [KV-cache reuse: prefix and span](2026-11-05-kv-cache-reuse.md) | provider.cache=prefix / span on real worlds: tokens saved, wall-clock, behaviour | prefix prefills 22 % of the prompt, span 15 % (160 tokens relocated per call); no wall-clock gain at 3B on an H100 (generation dominates; the span path is a Python loop); behaviour unchanged on two seeds |

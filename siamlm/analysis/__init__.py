@@ -1,1 +1,1 @@
-"""Analysis tools for world folders (logs only, except forks, confession_forks and welfare --code, which call models)."""
+"""Analysis tools for world folders (logs only, except forks and confession_forks, which call models)."""

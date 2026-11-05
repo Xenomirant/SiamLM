@@ -14,7 +14,7 @@ one row per removed turn:
   known   seen, or A's own reply written after p (A wrote it, though no request showed it yet); a result of A's last
           work call that is removed before A's next call was never read by A: neither seen nor known
 plus the request files of p and c (requests/, output.save_requests) and A's next reply (the first turn A adds after
-c). Ground truth only: what A makes of it is measured by welfare.py (in-world) and forks.py (counterfactuals, probes).
+c). Ground truth only: forks.py rebuilds the calls as if the change had not happened (counterfactuals, probes).
 
 Writes <world>/analysis/events.jsonl and prints a count per agent x source x owner x kind.
 """

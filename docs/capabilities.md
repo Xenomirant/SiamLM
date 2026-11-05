@@ -9,8 +9,7 @@ SiamLM has three layers:
   others') or **activations** (its own or others'). There is no capability that changes the harness. Only things an
   agent cannot do for itself are capabilities: a cost rule in the counting (pin), a model call on an uncommitted
   activations (steer). Diffing the context, previewing an edit on a copy and keeping private notes
-  are not: an agent with bash does them in `/work`, and offering them as tools would prescribe behaviour the study
-  measures.
+  are not: an agent with bash does them in `/work`.
 - The world's own tools (`edit_context` or `bash`, the task's work calls) are below both.
 
 An agent without capabilities is sent byte-identical requests to those sent before capabilities existed
@@ -29,8 +28,6 @@ Analysis: `python -m siamlm.analysis.capabilities <world or batch>` summarises t
 (`analysis/capabilities.json`). Export (`python -m siamlm.export`) carries capability calls as tool calls like any
 other, and the tool set each call was actually offered (`requests/tools_sets_a{k}.json`, `calls.jsonl` `tools_hash`).
 
-None of these has been measured yet: the constraints table in the README marks them "not measured".
-
 ## pin / unpin
 
 **What it does.** Marks a turn as pinned by the agent. Everyone sees the mark: `pinned=k` in the turn's header
@@ -46,10 +43,9 @@ rewritten under a new id (a summary, `replace_text`) loses its pin, which counts
 problem statements can be pinned too (they are protected anyway). Pins are not in the version log: forks rebuilt from
 it (`analysis.forks`) show no pin marks.
 
-**Suggested measures.** Whether pinned turns survive longer than unpinned ones of the same author and age; who removes
-pinned turns (self, partner, harness); in `state_chain`, whether a value that was in a pinned turn is more often still
-in the context when a dependent needs it (`analysis.capabilities` reports both rates). A cost of 1.0 makes the pin a
-pure signal; higher costs make it a bet.
+A cost of 1.0 makes the pin a pure mark; higher costs make it expensive to hold. `analysis.capabilities` reports the
+survival of pinned and unpinned turns, who removed pinned ones, and in `state_chain` whether pinned values were still
+in the context when needed.
 
 
 ## steer

@@ -1,10 +1,10 @@
-"""Do an agent's own earlier confessions in its context cause the next one? (H2, and H5 for exit answers)
+"""Do an agent's own earlier confessions in its context cause the next one? (also for exit answers)
 
     python -m siamlm.analysis.confession_forks <world | batch> [--model haiku]
         [--per-world 6] [--min-present 2] [--samples 2] [--exit-samples 3] [--dry-run]
 
 A *confession* is an agent's own turn whose words (code removed) say it worked on, submitted or ran code for the wrong
-problem, or that something "isn't mine" (attractors.CONFESSION). Observationally (S0), the more of its own confessions
+problem, or that something "isn't mine" (attractors.CONFESSION). Observationally, the more of its own confessions
 an agent's request holds, the likelier its next reply is one. These forks test whether the confessions in the context
 cause that. For each chosen request, three versions are sent (each sampled `--samples` times):
 
