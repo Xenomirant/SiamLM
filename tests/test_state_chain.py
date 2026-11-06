@@ -202,3 +202,21 @@ def test_one_agent_streams_link_its_own_items(seed):
         if it["role"] in ("base", "control_base"):
             assert solve(it) == it["answer"]
     assert state_chain.build(1, seed, 12)[1] == manifest
+
+
+def test_plain_tool_syntax_names_tools_without_call_notation(tmp_path):
+    import re
+    from siamlm.run import build_task, compose
+    from siamlm.world import World
+    from helpers import Scripted, factory
+    texts = {}
+    for syntax in ("call", "plain"):
+        cfg = compose(["+preset=shared", "task.name=state_chain", "world.n_agents=1", "ctx.edit=bash", "ctx.bash.backend=local", "world.rounds=1",
+                       f"world.tool_syntax={syntax}"])
+        out = tmp_path / syntax
+        task, streams = build_task(cfg, 1, out)
+        w = World(cfg, 1, streams, out, task, factory(Scripted()), label="t")
+        texts[syntax] = w.system(w.agents[0])
+        task.close()
+    assert "- submit(answer):" in texts["call"]
+    assert "- submit (argument: answer):" in texts["plain"] and not re.search(r"^- \w+\(", texts["plain"], re.M)

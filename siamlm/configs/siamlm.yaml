@@ -86,6 +86,7 @@ world:
                              # ends, with no problem: it can edit and write messages (a reply without a tool call
                              # ends its turn; over the limit it is held, as a call is)
   max_calls_per_step: 14     # model calls per step (then the step ends without a work call)
+  tool_syntax: call          # call: tools listed as "- submit(answer): ..." | plain: "- submit (argument: answer): ..."
   max_steps_per_problem: 24  # then the latest program is submitted
   max_api_errors: 5          # failed calls in a row (after the provider's retries) before an agent is ended
   feedback_on_submit: bit    # bit: accepted / not accepted | none: "Submitted."
