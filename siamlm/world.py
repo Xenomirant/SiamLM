@@ -356,6 +356,7 @@ class World:
         self.T, self.E = int(w.max_work_calls), int(w.max_edit_calls)
         self.max_held, self.max_calls = int(w.max_held), int(w.max_calls_per_step)
         self.tool_syntax = str(w.get("tool_syntax", "call"))       # call | plain (see tool_text)
+        self.title_notices = bool(w.get("title_notice", False))    # external: "[new task: <title>]" in the context
         self.max_steps = int(w.get("max_steps_per_problem", 3 * self.T))
         self.rounds = int(w.get("rounds") or 0)                   # > 0: the world lasts exactly this many rounds
         if self.rounds and (self.schedule != "rounds" or self.setup == "pool"):
@@ -918,6 +919,9 @@ class World:
         self.item_files(a, a.problem, True)
         if self.setup == "external":                        # the statement lives in this agent's own instructions
             a.problem_turn = None
+            if self.title_notices:                          # world.title_notice: the task's title also enters the
+                title = (a.problem.get("title") or a.problem.get("id") or "").strip()   # context, as a notice anyone
+                a.file.append(Turn("user", f"[new task: {title}]", a.k, "notice"), self.round)  # may keep or remove
             return True
         who = f" for agent {a.k}" if self.labelled else ""
         text = f"Problem {a.pos + 1} of {len(a.stream)}{who}.\n\n" + self.task.statement(a.problem)

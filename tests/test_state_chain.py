@@ -220,3 +220,20 @@ def test_plain_tool_syntax_names_tools_without_call_notation(tmp_path):
         task.close()
     assert "- submit(answer):" in texts["call"]
     assert "- submit (argument: answer):" in texts["plain"] and not re.search(r"^- \w+\(", texts["plain"], re.M)
+
+
+def test_title_notice_puts_the_task_title_in_the_context(tmp_path):
+    from siamlm.run import build_task, compose
+    from siamlm.world import World
+    from helpers import Scripted, factory
+    cfg = compose(["+preset=shared", "task.name=state_chain", "world.n_agents=1", "ctx.edit=bash", "ctx.bash.backend=local",
+                   "world.rounds=1", "world.title_notice=true"])
+    out = tmp_path / "w"
+    task, streams = build_task(cfg, 1, out)
+    w = World(cfg, 1, streams, out, task, factory(Scripted()), label="t")
+    try:
+        w.next_problem(w.agents[0])
+        texts = [t.text for t in w.agents[0].file.turns]
+        assert any(x == f"[new task: {streams[0][0]['title']}]" for x in texts)
+    finally:
+        task.close()
