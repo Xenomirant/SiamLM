@@ -15,6 +15,7 @@ this user may; they stay empty on the host).
 from __future__ import annotations
 
 import atexit
+import itertools
 import os
 import shutil
 import subprocess
@@ -35,6 +36,15 @@ def _sq(text: str) -> str:
 ROOTS = Path(os.environ.get("SIAMLM_LOCALBOX_ROOT", "/var/tmp/siamlm-localbox"))
 MOUNTS = ("/ctx", "/work")
 _checked: dict = {}
+
+
+_UIDS = itertools.count()
+
+
+def _next_uid() -> int:
+    """A host uid for one sandbox, unused by any account: 400000 + this process's slot (pid) + a counter, so sandboxes
+    of one process and of concurrent processes do not share a uid (and cannot read each other's folders)."""
+    return 400000 + (os.getpid() % 4000) * 100 + next(_UIDS) % 100
 
 
 def available() -> str | None:
@@ -75,10 +85,11 @@ class LocalSandbox:
     def __init__(self, settings):
         self.s = settings
         self.name, self.root, self.restarts, self.keep, self.id = f"lbx-{uuid.uuid4().hex[:12]}", None, 0, "", None
+        self.UID = _next_uid() if os.getuid() == 0 else self.UID   # one host uid per sandbox: siblings cannot read it
 
     def _own(self) -> None:
-        """The sandbox's host folder belongs to nobody, the user the namespace is entered as (when this process is
-        root; an unprivileged user keeps its own files)."""
+        """The sandbox's host folder belongs to the sandbox's own uid, the user the namespace is entered as, and is
+        private to it (0700); when this process is not root, the folder stays its own."""
         if os.getuid() == 0 and self.root is not None:
             for p in [self.root, *self.root.rglob("*")]:
                 try:
@@ -91,6 +102,7 @@ class LocalSandbox:
         if os.getuid() == 0:
             ROOTS.chmod(0o1777)
         self.root = Path(tempfile.mkdtemp(prefix=self.name + "-", dir=ROOTS))
+        self.root.chmod(0o700)
         for d in ("ctx", "work", "tmp"):
             (self.root / d).mkdir()
         self._own()
@@ -126,7 +138,7 @@ class LocalSandbox:
             return None, f"{FILE} is larger than {limit} bytes"
         return target.read_text(encoding="utf-8", errors="replace"), None
 
-    UID = 65534                                       # nobody: the user the namespace is entered as
+    UID = 65534                                       # the user the namespace is entered as (per sandbox when root)
 
     def _inner(self, body: str, drop: bool = True) -> str:
         """The script run inside the namespace: mount tmpfs at /work, /ctx and /tmp, copy the agent's files in, run
@@ -134,12 +146,17 @@ class LocalSandbox:
         maps to root inside: it may mount tmpfs there and nothing else; on the host it is nobody, so outside the
         three tmpfs mounts and the sandbox's own folder it can write nothing and read only what is world-readable."""
         s, r = self.s, self.root
-        return (f"mount -t tmpfs -o size={s.get('tmpfs_size', '64m')} none /work && "
+        return (f"umask 077; "
+                f"mount -t tmpfs -o size={s.get('tmpfs_size', '64m')} none /work && "
                 f"mount -t tmpfs -o size={s.get('ctx_size', '16m')} none /ctx && "
                 f"mount -t tmpfs -o size={s.get('tmpfs_size', '64m')} none /tmp 2>/dev/null; "
                 f"cp -a '{r}/work/.' /work/ 2>/dev/null; cp -a '{r}/ctx/.' /ctx/ 2>/dev/null; cp -a '{r}/tmp/.' /tmp/ 2>/dev/null; "
+                # private scratch over the host's shared folders (the sandbox's own folder is under /var/tmp, so this
+                # comes after the copy in and is undone before the copy out)
+                f"mount -t tmpfs -o size=8m none /dev/shm 2>/dev/null; mount -t tmpfs -o size=8m none /var/tmp 2>/dev/null; "
                 f"cd /work; "
                 f"{body}; rc=$?; "
+                f"cd /; umount /var/tmp 2>/dev/null; "
                 f"rm -rf '{r}/work' '{r}/ctx' '{r}/tmp'; cp -a /work '{r}/work' 2>/dev/null; cp -a /ctx '{r}/ctx' 2>/dev/null; "
                 f"cp -a /tmp '{r}/tmp' 2>/dev/null; exit $rc")
 
@@ -185,11 +202,12 @@ class LocalSandbox:
         <box> sh -c script sh args...` would run it."""
         if not self.alive():
             self.restart()
-        path = self.root / ".exec.sh"
-        path.write_text(script, encoding="utf-8")
+        (self.root / "tmp").mkdir(exist_ok=True)
+        (self.root / "tmp" / ".exec.sh").write_text(script, encoding="utf-8")   # reaches the script as /tmp/.exec.sh
         self._own()
         quoted = " ".join(_sq(a) for a in (args or []))
-        proc = self._launch(f"sh '{path}' {quoted}", data, 120, drop=False)   # a harness script, not the agent's
+        proc = self._launch(f"sh /tmp/.exec.sh {quoted}; rc=$?; rm -f /tmp/.exec.sh; (exit $rc)", data, 120,
+                            drop=False)                   # a harness script, not the agent's
         try:
             out, err = proc.communicate(input=data, timeout=180)
         except subprocess.TimeoutExpired:
