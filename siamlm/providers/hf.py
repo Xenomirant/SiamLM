@@ -161,7 +161,9 @@ def text_call(words: str, tools: list[dict]) -> tuple[list[dict], str]:
     """A reply that is only a call written as text, `name(value)` or `name` followed by a JSON object on the next line,
     naming a tool that was offered, becomes that call (format "text_call"): small local models drift into this after a
     message breaks their tool-calling turn. `name(value)` fills the tool's one required parameter (or its only one).
-    Anything else, or a name not offered, stays text. Returns (calls, words)."""
+    Anything else, or a name not offered, stays text. Returns (calls, words). The call keeps the model's text as "raw":
+    export writes the reply as that text (what was generated), not as a tool call. Off unless provider.text_calls is
+    set: in training it would reward the text form."""
     m = TEXT_CALL.match(words or "")
     if not m:
         return [], words
@@ -184,15 +186,16 @@ def text_call(words: str, tools: list[dict]) -> tuple[list[dict], str]:
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
             value = value[1:-1]
         args = {names[0]: value}
-    return [{"id": "hf_0", "name": m.group(1), "arguments": args, "format": "text_call"}], ""
+    return [{"id": "hf_0", "name": m.group(1), "arguments": args, "format": "text_call", "raw": words}], ""
 
 
 class HFProvider:
     name = "hf"
 
     def __init__(self, model: str, device: str = "cpu", dtype: str = "float32", steer=None, cache: str = "prefix",
-                 cache_min_span: int = 16, cache_max_spans: int = 6, **_: object):
+                 cache_min_span: int = 16, cache_max_spans: int = 6, text_calls: bool = False, **_: object):
         self.model, self.device = model, device
+        self.text_calls = bool(text_calls)               # read calls written as text (measurement only; see text_call)
         self.lm, self.tokenizer, self.lock = load_model(model, device, dtype)
         self._norms: dict = {}
         self.cache_mode = str(cache or "none")            # none | prefix | span (siamlm/providers/kvcache.py)
@@ -312,8 +315,8 @@ class HFProvider:
         words, calls, reasoning = parse_reply(raw)
         if not offered:
             calls = []
-        elif not calls:                                 # a call written as text, for a tool this request offered
-            calls, words = text_call(words, offered)
+        elif not calls and self.text_calls:             # provider.text_calls: a call written as text, for an offered
+            calls, words = text_call(words, offered)    # tool (measurement only; off for training: see text_call)
         ended = len(new) > 0 and int(new[-1]) in {self.tokenizer.eos_token_id, *(
             [self.lm.generation_config.eos_token_id] if isinstance(self.lm.generation_config.eos_token_id, int)
             else self.lm.generation_config.eos_token_id or [])}

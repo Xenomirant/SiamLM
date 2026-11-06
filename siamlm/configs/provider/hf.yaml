@@ -22,6 +22,10 @@ cache: prefix        # KV-cache reuse across this agent's calls (siamlm/provider
                      # Each call reports cache_* in its usage
 cache_min_span: 16   # span: survivors shorter than this are prefilled
 cache_max_spans: 6   # span: at most this many survivors relocated per call (the longest first)
+text_calls: false    # true: a reply that is only a call written as text (submit(42), or a name then a JSON
+                     # object) for an offered tool is carried out as that call (format text_call); for
+                     # measuring models that slip out of the tool format. Off for training: it would reward
+                     # the text form; export writes such replies as the text that was generated
 # steer: EXPERIMENTAL (siamlm/capabilities/steer.py, docs/steering.md; pip install "siamlm[steer]"). The vectors'
 # settings (concepts, vectors_dir, layer, extract_questions) for any steering of this agent; `enabled: true` is the
 # older per-agent switch for self-steering with the behaviour settings below (= capabilities.steer.self for this agent;

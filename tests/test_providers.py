@@ -153,9 +153,18 @@ def test_hf_text_calls_for_offered_tools_only():
     bash = {"type": "function", "function": {"name": "bash", "parameters": {"type": "object",
             "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
     calls, words = text_call("submit(64698)", [submit, bash])
-    assert calls == [{"id": "hf_0", "name": "submit", "arguments": {"answer": "64698"}, "format": "text_call"}] and words == ""
+    assert calls == [{"id": "hf_0", "name": "submit", "arguments": {"answer": "64698"}, "format": "text_call",
+                      "raw": "submit(64698)"}] and words == ""
     assert text_call('submit\n{"answer": "17131"}', [submit])[0][0]["arguments"] == {"answer": "17131"}
     assert text_call("submit('u8494')", [submit])[0][0]["arguments"] == {"answer": "u8494"}
     for keep in ("The answer is 17131.", "submit(64698) and then more text", "launch(x)", 'submit\n{"answer": '):
         assert text_call(keep, [submit, bash]) == ([], keep)
     assert text_call("submit(1)", [bash]) == ([], "submit(1)")          # not offered: stays text
+
+
+def test_hf_text_calls_are_off_unless_asked():
+    import inspect
+    from siamlm.providers.hf import HFProvider, text_call
+    assert inspect.signature(HFProvider.__init__).parameters["text_calls"].default is False
+    sub = {"type": "function", "function": {"name": "submit", "parameters": {"properties": {"answer": {}}, "required": ["answer"]}}}
+    assert text_call("submit(7)", [sub])[0][0]["raw"] == "submit(7)"

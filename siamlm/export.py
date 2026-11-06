@@ -132,9 +132,12 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
             after = produced[produced.index(made) + 1:]
             result = next((t["text"] for t in after if t["kind"] == "result"), None)
         notices = [t["text"] for t in produced if t["kind"] == "notice"]
+        reply_format = None
         if reply is not None:
             text, calls, source = reply.get("text"), list(reply.get("tool_calls") or []), "replies.jsonl"
             thought = reply.get("reasoning")
+            if calls and calls[0].get("format") == "text_call":   # the model wrote the call as text (provider.text_calls):
+                text, calls, reply_format = calls[0].get("raw") or text, [], "text_call"   # export what it generated
         elif made is not None:
             source, thought = "reconstructed", reasoning.get(key)
             if made["kind"] == "call":
@@ -157,7 +160,8 @@ def calls_of(logs: WorldLogs, k: int) -> list[dict]:
                     "tools": tools_of(c), "text": text, "tool_calls": calls, "reasoning": thought, "reply_source": source,
                     "result": result, "notices": notices, "error": c.get("error"), "usage": c.get("usage") or {},
                     "cost": c.get("cost"), "finish_reason": c.get("finish_reason"), "sampling_seed": seed,
-                    "reward": _reward(item) if item else None, "item_passed": item.get("passed") if item else None})
+                    "reward": _reward(item) if item else None, "item_passed": item.get("passed") if item else None,
+                    "reply_format": reply_format})
     exit_tools = logs.dir / "requests" / f"exit_tools_a{k}.json"   # the set sent with the exit question (else the first)
     exit_set = json.loads(exit_tools.read_text(encoding="utf-8")) if exit_tools.exists() else first
     for e in logs.exits:                                   # world.exit_question: one more call, text only
@@ -201,6 +205,8 @@ def usable(call: dict) -> bool:
 def chat_rows(logs: WorldLogs, k: int, calls: list[dict]) -> list[dict]:
     agent = next(a for a in logs.doc["agents"] if a["agent"] == k)
     settings = logs.settings()
+    text_calls = (logs.doc.get("config") or {}).get("provider", {}).get("text_calls") or any(
+        c.get("reply_format") == "text_call" for c in calls)
     rows = []
     for c in calls:
         if not usable(c):
@@ -216,7 +222,10 @@ def chat_rows(logs: WorldLogs, k: int, calls: list[dict]) -> list[dict]:
                                   "reasoning": c["reasoning"], "finish_reason": c["finish_reason"], "usage": c["usage"],
                                   "cost": c["cost"], "sampling_seed": c["sampling_seed"],
                                   "temperature": (logs.doc.get("config") or {}).get("provider", {}).get("temperature"),
-                                  "reply_source": c["reply_source"]}})
+                                  "reply_source": c["reply_source"], "reply_format": c.get("reply_format"),
+                                  # text calls were read in this world: later requests hold those calls in tool form,
+                                  # which the model did not generate; drop such worlds from training
+                                  "text_calls": bool(text_calls)}})
     return rows
 
 
