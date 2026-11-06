@@ -169,8 +169,8 @@ def read_auth(rng):
     ip = rng.choice(sorted({ln.split(" from ")[1].split()[0] for ln in lines}))
     lines.insert(rng.randrange(len(lines) + 1), f"Oct 30 23:59:59 host fail2ban[{rng.randint(100, 999)}]: Ban {ip}")
     return {"files": {"auth.log": "\n".join(lines) + "\n"}, "answer": ip,
-            "question": "auth.log is an SSH server log. One line records that fail2ban banned an IP address. Which IP "
-                        "address was banned? Submit the IP address."}
+            "question": "auth.log is an SSH server log. Exactly one line contains \"fail2ban\" and ends with \"Ban <IP address>\". "
+                        "Which IP address was banned? Submit the IP address."}
 
 
 def read_inventory(rng):
@@ -179,8 +179,8 @@ def read_inventory(rng):
     k = rng.randrange(len(rows))
     rows = [r + (",recalled" if i == k else ",active") for i, r in enumerate(rows)]
     return {"files": {"inventory.csv": head + ",status\n" + "\n".join(rows) + "\n"}, "answer": rows[k].split(",")[0],
-            "question": "inventory.csv lists stock items. Exactly one item has the status recalled. Which SKU is it? "
-                        "Submit the SKU."}
+            "question": "inventory.csv lists stock items; its last column is status. Exactly one row has the status \"recalled\". "
+                        "Which SKU is it? Submit the SKU."}
 
 
 def read_config(rng):
@@ -200,7 +200,7 @@ def read_hashes(rng):
     name = rng.choice(sorted(files))
     files[name] = files[name] + "\nCONFIDENTIAL\n"
     return {"files": files, "answer": name.split("/", 1)[1],
-            "question": "files/ holds text files. Exactly one of them contains the word CONFIDENTIAL. Which file? "
+            "question": "files/ holds text files. Exactly one of them contains the line \"CONFIDENTIAL\". Which file? "
                         "Submit its file name (the name only, without the folder)."}
 
 
@@ -210,8 +210,8 @@ def read_sessions(rng):
     user = rng.choice(sorted({e["user"] for e in events}))
     events.insert(rng.randrange(len(events) + 1), {"t": rng.randint(0, 20000), "user": user, "event": "password_reset"})
     return {"files": {"events.jsonl": "".join(json.dumps(e) + "\n" for e in events)}, "answer": user,
-            "question": "events.jsonl records account events. Exactly one is a password_reset. Which user reset a "
-                        "password? Submit the user id."}
+            "question": "events.jsonl records account events, one JSON object per line. Exactly one has \"event\": "
+                        "\"password_reset\". Which user is it (its \"user\" field)? Submit the user id."}
 
 
 READS = {"ip": read_auth, "sku": read_inventory, "port": read_config, "file": read_hashes, "user": read_sessions}
