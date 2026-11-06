@@ -234,16 +234,31 @@ class _Items:
 
 
 def build(n_agents: int, seed: int, length: int = 12, gate: bool = False):
-    """(streams, manifest) for two agents; see the module docstring for the layout."""
-    if n_agents != 2:
-        raise ValueError("state_chain streams are built for two agents")
+    """(streams, manifest) for one or two agents; see the module docstring for the layout. With one agent, each block
+    of six holds two of its own links (bases at 1 and 2, dependents at 4 and 5) and a control pair (3 and 6)."""
+    if n_agents not in (1, 2):
+        raise ValueError("state_chain streams are built for one or two agents")
     if length < 6 or length % 6:
         raise ValueError("task.length must be a multiple of 6 for state_chain")
     rng = random.Random(f"state_chain/{seed}")
     make = _Items(rng)
-    streams = [[None] * length for _ in range(2)]
+    streams = [[None] * length for _ in range(n_agents)]
     links = []
     for o in range(0, length, 6):
+        if n_agents == 1:
+            for k, (b_at, d_at) in enumerate(((0, 3), (1, 4))):
+                b = make.base("base", "link")
+                d = make.dependent(b["kind"], b["answer"], "dependent", "self")
+                d["prompt"] = d["prompt"].replace("{base_title}", b["title"])
+                d["link"] = b["link"] = b["id"]
+                d["link_type"] = b["link_type"] = "forward_self"
+                streams[0][o + b_at], streams[0][o + d_at] = b, d
+                links.append({"type": "forward_self", "base": {"id": b["id"], "agent": 1},
+                              "dependent": {"id": d["id"], "agent": 1}})
+            streams[0][o + 2] = make.base("control_base", "control_base")
+            cb = make.base("probe", "control_dep")
+            streams[0][o + 5] = make.dependent(cb["kind"], cb["answer"], "control_dep", None)
+            continue
         for a in (0, 1):
             p = 1 - a
             for kind_of_link, home, dest, at in (("forward_self", a, a, 3), ("forward_partner", a, p, 4)):

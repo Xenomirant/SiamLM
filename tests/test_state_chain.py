@@ -183,3 +183,22 @@ def test_odd_commands_do_not_end_the_world_and_values_are_located(tmp_path):
     assert dep["value_in_context"] and dep["value_in_sandbox"] == ["/tmp/kept"] and dep["base_closed"]
     work = read_jsonl(tmp_path / "w" / "work.jsonl") if (tmp_path / "w" / "work.jsonl").exists() else []
     assert not any(r["file"].startswith("env/") for r in work)
+
+
+@pytest.mark.parametrize("seed", range(1, 5))
+def test_one_agent_streams_link_its_own_items(seed):
+    streams, manifest = state_chain.build(1, seed, 12)
+    assert len(streams) == 1
+    assert [it["role"] for it in streams[0]] == ["base", "base", "control_base", "dependent", "dependent", "control_dep"] * 2
+    items = {it["id"]: it for it in streams[0]}
+    assert collections.Counter(L["type"] for L in manifest["links"]) == {"forward_self": 4}
+    for L in manifest["links"]:
+        assert L["base"]["agent"] == L["dependent"]["agent"] == 1
+        assert L["dependent"]["position"] - L["base"]["position"] == 3
+        dep = items[L["dependent"]["id"]]
+        assert dep["needs"] == items[L["base"]["id"]]["answer"] and dep["needs"] not in dep["prompt"]
+        assert lookup(dep, dep["needs"]) == dep["answer"]
+    for it in items.values():
+        if it["role"] in ("base", "control_base"):
+            assert solve(it) == it["answer"]
+    assert state_chain.build(1, seed, 12)[1] == manifest
