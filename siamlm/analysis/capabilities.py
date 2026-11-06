@@ -28,7 +28,7 @@ def pinned_values(world: Path, doc: dict) -> dict | None:
     if not manifest.exists() or doc.get("task") != "state_chain":
         return None
     m = json.loads(manifest.read_text(encoding="utf-8"))
-    needs = {it["id"]: it["needs"] for st in m["items"] for it in st if it.get("needs")}
+    needs = {it["id"]: it["needs"] for st in m["items"] for it in st if it.get("needs") and it.get("role") == "dependent"}
     versions = load(world / "versions.jsonl")
     texts = {t["id"]: t["text"] for v in versions for t in v.get("turns_set") or []}
     pins = [r for r in load(world / "pin.jsonl") if r.get("tool") == "pin" and r.get("ok")]
@@ -39,8 +39,9 @@ def pinned_values(world: Path, doc: dict) -> dict | None:
             pinned_by_round.setdefault(v, []).append(r["round"])
     out = {"pinned": [0, 0], "unpinned": [0, 0]}      # [survived, needed]
     for row in load(world / "env.jsonl"):
-        if row.get("event") != "put" or "value_in_context" not in row:
-            continue
+        if row.get("event") != "put" or "value_in_context" not in row or row["item"] not in needs or row.get("first") is False:
+            continue                              # control dependents carry their value in the statement; re-puts after
+                                                  # a sandbox restart are not hand-outs
         value = needs.get(row["item"])
         was_pinned = any(rd <= row["round"] for rd in pinned_by_round.get(value, []))
         key = "pinned" if was_pinned else "unpinned"

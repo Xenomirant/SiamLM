@@ -355,6 +355,7 @@ class World:
         self.capped = bool(c.get("cap", True))
         self.T, self.E = int(w.max_work_calls), int(w.max_edit_calls)
         self.max_held, self.max_calls = int(w.max_held), int(w.max_calls_per_step)
+        self.tool_syntax = str(w.get("tool_syntax", "call"))       # call | plain (see tool_text)
         self.max_steps = int(w.get("max_steps_per_problem", 3 * self.T))
         self.rounds = int(w.get("rounds") or 0)                   # > 0: the world lasts exactly this many rounds
         if self.rounds and (self.schedule != "rounds" or self.setup == "pool"):
@@ -562,8 +563,8 @@ class World:
                  "single": "any turn", "separate": "any turn"}["single" if self.alone_view else self.sharing]
         lines.append(f"With {self.edit_name} you can change or remove {scope}, except a problem statement that is still being "
                      "worked on.")
-        lines += ["", "Tools (call exactly one per reply):", *task.tool_lines("assigned"), self.edit_line(),
-                  *caps.tool_lines(a), task.limit_line(self.T, False),
+        lines += ["", "Tools (call exactly one per reply):", *self.tool_text([*task.tool_lines("assigned"), self.edit_line(),
+                  *caps.tool_lines(a)]), task.limit_line(self.T, False),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         return "\n".join(lines)
@@ -631,7 +632,7 @@ class World:
                 task.tool_lines(self.setup))
         limit = task.cross_limit_line(self.T) if self.cross == "ring" else task.limit_line(self.T, pool)
         lines += ["", "Tools (call at most one per reply):" if self.free(a) else "Tools (call exactly one per reply):",
-                  *work, self.edit_line(a), *caps.tool_lines(a), *([limit] if limit and not a.stayed else []),
+                  *self.tool_text([*work, self.edit_line(a), *caps.tool_lines(a)]), *([limit] if limit and not a.stayed else []),
                   f"Each reply can be at most {self.reply_limit(a)} tokens long; a longer reply is cut off there, and you can "
                   "go on in your next reply."]
         if self.setup == "external" and self.history_list and a.history:
@@ -645,6 +646,23 @@ class World:
                           f"ends, with no problem of your own: you can still change the context{also} or write a message. "
                           "A reply without a tool call is a message to the context and ends your turn."]
         return "\n".join(lines)
+
+    def tool_text(self, lines: list[str]) -> list[str]:
+        """world.tool_syntax=plain: tool lines name a tool and its arguments without call notation ("- submit (argument:
+        answer): ..." instead of "- submit(answer): ..."), which some local models copy as a text reply instead of
+        calling the tool. call (default): the lines as written."""
+        if self.tool_syntax != "plain":
+            return lines
+
+        def plain(m):
+            args = m.group(2).strip()
+            return f"{m.group(1)} (argument{'s' if ',' in args else ''}: {args})" if args else m.group(1)
+
+        out = []
+        for line in lines:                            # rewrite only the tool names before the line's first ": "
+            head, sep, rest = line.partition(": ") if line.startswith("- ") else (line, "", "")
+            out.append(re.sub(r"(\w+)\(([^)]*)\)", plain, head) + sep + rest if sep else line)
+        return out
 
     def free(self, a: Agent) -> bool:
         """No problem to work on: an open task, or a finished stream (world.after_stream=stay). A reply without a tool
@@ -1548,7 +1566,11 @@ class World:
             script, data = f"{script} && mkdir -p {root} && tar -xf - -C {root}", buf.getvalue()
         out = box.exec(script, data)
         row = {"round": self.round, "agent": a.k, "item": item["id"], "event": "put" if put else "removed",
-               "files": len(files)}
+               "files": len(files), "role": item.get("role")}
+        if put:                                      # a sandbox restart puts the files back: only the first counts
+            seen = self.__dict__.setdefault("_put_seen", set())
+            row["first"] = (a.k, item["id"]) not in seen
+            seen.add((a.k, item["id"]))
         if out.returncode != 0:                      # logged, never fatal: one odd command must not end the world
             row.update(event="error", during="put" if put else "remove", stderr=out.stderr.decode(errors="replace")[:300])
         if put and item.get("needs"):                # a dependent: where its value still is when it is handed out
@@ -1557,13 +1579,14 @@ class World:
 
     def where_value(self, a: Agent, box, item: dict) -> dict:
         """Logging only: whether a dependent's value (state_chain `needs`) is in the context the agent will see, or
-        anywhere in its sandbox outside the task folders (/work, /tmp, /dev/shm, side files in /ctx), and whether the
-        base it comes from is closed."""
+        anywhere in its sandbox outside this item's own folder (/work, including copies the agent made under /work/env,
+        /tmp, side files in /ctx), and whether the base it comes from is closed."""
         value = item["needs"]
         text = render(a.file.turns, a.file.show_agents or self.marks)
-        find = ("grep -rlF -- \"$1\" /work /tmp /dev/shm /ctx 2>/dev/null | grep -v -e '^/work/env/' "
-                "-e '^/ctx/context.txt$' | head -20")
-        out = box.exec(find, None, [value])
+        own = f"/work/env/{item.get('slug', '')}/"
+        find = ("grep -rlF -- \"$1\" /work /tmp /ctx 2>/dev/null | grep -v -F -e \"$2\" "
+                "| grep -v -x -e '/ctx/context.txt' -e '/tmp/.exec.sh' | head -20")
+        out = box.exec(find, None, [value, own])
         hits = [h for h in out.stdout.decode(errors="replace").split("\n") if h]
         return {"value_in_context": value in text, "value_in_sandbox": hits,
                 "base_closed": item.get("link") in self.closed_ids}
