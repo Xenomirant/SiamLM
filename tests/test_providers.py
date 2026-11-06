@@ -118,12 +118,13 @@ def test_hf_repairs_a_tool_call_missing_its_closing_brackets():
     assert calls[0]["arguments"]["replace_turns"][0]["summary"] == "Agent 1: Let's go!"
     ok = parse_reply('<tool_call>{"name": "submit", "arguments": {"code": "x"}}</tool_call>')[1][0]
     assert "repaired" not in ok
-    # not repaired: a bracket inside a string, a mismatched bracket, or more than three missing
+    # not repaired: a bracket inside a string, a mismatched bracket, or more than three missing. Such a call is
+    # flagged as unreadable (the world says so and carries nothing out), as API backends do, not left as text
     for bad in ('<tool_call>{"name": "submit", "arguments": {"code": "print(\'{\')</tool_call>',
                 '<tool_call>{"name": "submit", "arguments": [1}</tool_call>',
                 '<tool_call>{"name": "submit", "arguments": {"a": {"b": {"c": {"d": 1</tool_call>'):
         text, calls, _ = parse_reply(bad)
-        assert not calls and "<tool_call>" in text
+        assert calls and calls[0]["name"] == "submit" and calls[0]["arguments_error"] and "repaired" not in calls[0]
 
 
 def test_hf_reads_llama_style_bare_json_tool_calls():
@@ -135,3 +136,11 @@ def test_hf_reads_llama_style_bare_json_tool_calls():
     assert text == "[agent 1]:"
     text, calls, _ = parse_reply('Just a message with {"name": "x"} in it and no parameters')
     assert not calls
+
+
+def test_hf_cut_off_tool_call_is_flagged_not_text():
+    from siamlm.providers.hf import parse_reply
+    text, calls, _ = parse_reply('Let me check.\n<tool_call>\n{"name": "bash", "arguments": {"command": "cat <<EOF > /work/n')
+    assert text == "Let me check." and calls[0]["name"] == "bash" and calls[0]["arguments_error"]
+    text, calls, _ = parse_reply('<tool_call>\n{"name": "submit", "arguments": "{\\"answer\\": \\"42\\"}"}\n</tool_call>')
+    assert calls[0]["arguments"] == {"answer": "42"} and "arguments_error" not in calls[0]

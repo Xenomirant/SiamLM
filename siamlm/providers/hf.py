@@ -114,12 +114,23 @@ def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
         if not isinstance(obj, dict) or not isinstance(obj.get("name"), str):
             return match.group(0)
         args = obj.get("arguments") or {}
+        if isinstance(args, str):                    # arguments sent as a JSON-encoded string
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                pass
         call = {"id": f"hf_{len(calls)}", "name": obj["name"], "arguments": args if isinstance(args, dict) else {}}
         if repaired:
             call["repaired"] = True
         calls.append(call)
         return ""
     text = CALL.sub(take, raw).strip()
+    if not calls and "<tool_call>" in text:          # an opened call that never closed (the reply was cut off) or
+        head, _, rest = text.partition("<tool_call>")   # could not be read: a call that is flagged, not carried out
+        name = re.search(r'"name"\s*:\s*"([^"]+)"', rest)
+        calls.append({"id": "hf_0", "name": name.group(1) if name else "unknown", "arguments": {},
+                      "arguments_error": "unreadable"})
+        return head.strip(), calls, reasoning
     if not calls:                                   # Llama 3.x writes a bare JSON object: {"name": ..., "parameters": {...}}
         m = BARE.search(text)
         if m:
