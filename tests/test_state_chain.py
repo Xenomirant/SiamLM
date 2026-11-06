@@ -237,3 +237,22 @@ def test_title_notice_puts_the_task_title_in_the_context(tmp_path):
         assert any(x == f"[new task: {streams[0][0]['title']}]" for x in texts)
     finally:
         task.close()
+
+
+@pytest.mark.parametrize("seed", range(1, 7))
+def test_read_bases_mark_their_answer_once(seed):
+    streams, manifest = state_chain.build(1, seed, 12, bases="read")
+    assert manifest["bases"] == "read"
+    markers = {"ip": "fail2ban", "sku": ",recalled", "port": "pinned.port", "file": "CONFIDENTIAL", "user": "password_reset"}
+    for it in streams[0]:
+        if it["role"] not in ("base", "control_base"):
+            continue
+        text = "\n".join(it["files"].values())
+        assert text.count(markers[it["kind"]]) == 1
+        hit = next(line for f, body in it["files"].items() for line in ([f] if it["kind"] == "file" and "CONFIDENTIAL" in body
+                                                                        else body.splitlines()) if markers[it["kind"]] in line or
+                   (it["kind"] == "file" and line == f))
+        assert it["answer"] in hit
+    for L in manifest["links"]:                    # dependents still need the base's value, which is in the base's files
+        dep = next(x for x in streams[0] if x["id"] == L["dependent"]["id"])
+        assert lookup(dep, dep["needs"]) == dep["answer"]

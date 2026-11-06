@@ -197,6 +197,8 @@ task:
   hint: false                # state_chain: true = the instructions say that later tasks may ask about earlier answers
   gate: false                # codeeval_pro, state_chain: true = the second item of a cross-agent link is not handed
                              # out before the first is closed (the agent takes its next item meanwhile, or waits)
+  bases: compute             # state_chain: compute (a base asks for a value computed from its files) | read (the
+                             # same files, the answer marked so that one search finds it)
   data: ${data.dir}/codeeval_pro   # codeeval_pro: the folder scripts/fetch_codeeval_pro.py writes
 
 harbor:                      # task.name=harbor (siamlm/tasks/harbor.py, docs/harbor.md): each item is one Harbor task;

@@ -69,7 +69,8 @@ def build_task(cfg, seed: int, out: Path, pool=(), grader_factory=None):
         return task, task.streams(n)
     if name == "state_chain":                # binding by state: generated shell tasks, no grader
         from siamlm.tasks import state_chain
-        st, manifest = state_chain.build(n, int(seed), int(tc.length), gate=bool(tc.get("gate", False)))
+        st, manifest = state_chain.build(n, int(seed), int(tc.length), gate=bool(tc.get("gate", False)),
+                                         bases=str(tc.get("bases", "compute")))
         out.mkdir(parents=True, exist_ok=True)
         (out / "manifest.json").write_text(json.dumps(manifest, indent=1), encoding="utf-8")
         return state_chain.StateChainTask(bool(tc.get("hint", False))), st

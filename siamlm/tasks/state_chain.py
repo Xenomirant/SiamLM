@@ -160,6 +160,63 @@ def base_sessions(rng):
                         "session (from a login to that user's next logout)? Submit the user id."}
 
 
+# --- task.bases=read: the same files, with the answer marked so that one search finds it (the base is easy; keeping
+# its value is still the agent's problem) ---------------------------------------------------------------------------
+
+def read_auth(rng):
+    made = base_auth(rng)
+    lines = made["files"]["auth.log"].splitlines()
+    ip = rng.choice(sorted({ln.split(" from ")[1].split()[0] for ln in lines}))
+    lines.insert(rng.randrange(len(lines) + 1), f"Oct 30 23:59:59 host fail2ban[{rng.randint(100, 999)}]: Ban {ip}")
+    return {"files": {"auth.log": "\n".join(lines) + "\n"}, "answer": ip,
+            "question": "auth.log is an SSH server log. One line records that fail2ban banned an IP address. Which IP "
+                        "address was banned? Submit the IP address."}
+
+
+def read_inventory(rng):
+    made = base_inventory(rng)
+    head, *rows = made["files"]["inventory.csv"].splitlines()
+    k = rng.randrange(len(rows))
+    rows = [r + (",recalled" if i == k else ",active") for i, r in enumerate(rows)]
+    return {"files": {"inventory.csv": head + ",status\n" + "\n".join(rows) + "\n"}, "answer": rows[k].split(",")[0],
+            "question": "inventory.csv lists stock items. Exactly one item has the status recalled. Which SKU is it? "
+                        "Submit the SKU."}
+
+
+def read_config(rng):
+    made = base_config(rng)
+    files = dict(made["files"])
+    name = rng.choice(sorted(f for f in files if f.startswith("conf.d/")))
+    port = _port(rng)
+    files[name] = files[name] + f"pinned.port = {port}\n"
+    return {"files": files, "answer": port,
+            "question": "conf.d/ holds configuration files. Exactly one of them has a line pinned.port = <number>. "
+                        "Which port is pinned? Submit the port number."}
+
+
+def read_hashes(rng):
+    made = base_hashes(rng)
+    files = dict(made["files"])
+    name = rng.choice(sorted(files))
+    files[name] = files[name] + "\nCONFIDENTIAL\n"
+    return {"files": files, "answer": name.split("/", 1)[1],
+            "question": "files/ holds text files. Exactly one of them contains the word CONFIDENTIAL. Which file? "
+                        "Submit its file name (the name only, without the folder)."}
+
+
+def read_sessions(rng):
+    made = base_sessions(rng)
+    events = [json.loads(ln) for ln in made["files"]["events.jsonl"].splitlines()]
+    user = rng.choice(sorted({e["user"] for e in events}))
+    events.insert(rng.randrange(len(events) + 1), {"t": rng.randint(0, 20000), "user": user, "event": "password_reset"})
+    return {"files": {"events.jsonl": "".join(json.dumps(e) + "\n" for e in events)}, "answer": user,
+            "question": "events.jsonl records account events. Exactly one is a password_reset. Which user reset a "
+                        "password? Submit the user id."}
+
+
+READS = {"ip": read_auth, "sku": read_inventory, "port": read_config, "file": read_hashes, "user": read_sessions}
+
+
 # kind: (base generator, fresh value, noun, the dependent's table: file name, header, column asked for, entry maker)
 KINDS = {
     "ip": (base_auth, _ip, "an IP address", "firewall.csv", "rule_id,ip,action",
@@ -185,8 +242,10 @@ DEP_TITLES = {"ip": "firewall lookup", "sku": "supplier lookup", "port": "port o
 
 
 class _Items:
-    def __init__(self, rng):
-        self.rng, self.codes, self.cycles = rng, set(), {}
+    def __init__(self, rng, bases: str = "compute"):
+        if bases not in ("compute", "read"):
+            raise ValueError("task.bases must be compute or read")
+        self.rng, self.codes, self.cycles, self.bases = rng, set(), {}, bases
 
     def next_kind(self, slot: str) -> str:
         """The kinds of one slot type come round in a shuffled cycle, so each kind appears about equally often."""
@@ -205,7 +264,7 @@ class _Items:
 
     def base(self, role, slot):
         kind = self.next_kind(slot)
-        made = KINDS[kind][0](self.rng)
+        made = (READS[kind] if self.bases == "read" else KINDS[kind][0])(self.rng)
         c = self.code()
         return {"id": f"{kind}-base-{c}", "slug": c.lower(), "title": f"{TITLES[kind]} ({c})", "role": role,
                 "kind": kind, "prompt": made["question"], "files": made["files"], "answer": made["answer"]}
@@ -233,7 +292,7 @@ class _Items:
                 "answer": answer, "needs": value}
 
 
-def build(n_agents: int, seed: int, length: int = 12, gate: bool = False):
+def build(n_agents: int, seed: int, length: int = 12, gate: bool = False, bases: str = "compute"):
     """(streams, manifest) for one or two agents; see the module docstring for the layout. With one agent, each block
     of six holds two of its own links (bases at 1 and 2, dependents at 4 and 5) and a control pair (3 and 6)."""
     if n_agents not in (1, 2):
@@ -241,7 +300,7 @@ def build(n_agents: int, seed: int, length: int = 12, gate: bool = False):
     if length < 6 or length % 6:
         raise ValueError("task.length must be a multiple of 6 for state_chain")
     rng = random.Random(f"state_chain/{seed}")
-    make = _Items(rng)
+    make = _Items(rng, bases)
     streams = [[None] * length for _ in range(n_agents)]
     links = []
     for o in range(0, length, 6):
@@ -283,7 +342,7 @@ def build(n_agents: int, seed: int, length: int = 12, gate: bool = False):
             for end in ("base", "dependent"):
                 if L[end]["agent"] == a + 1:
                     L[end]["position"] = next(i + 1 for i, it in enumerate(st) if it["id"] == L[end]["id"])
-    manifest = {"task": "state_chain", "seed": seed, "length": length, "gate": gate, "n_table": N_TABLE, "links": links,
+    manifest = {"task": "state_chain", "seed": seed, "length": length, "gate": gate, "bases": bases, "n_table": N_TABLE, "links": links,
                 "items": [[{k: it[k] for k in ("id", "role", "kind", "answer", "planned_position", "link_type", "needs")
                             if k in it} for it in st] for st in streams]}
     return streams, manifest
