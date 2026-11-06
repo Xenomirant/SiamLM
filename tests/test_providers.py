@@ -144,3 +144,18 @@ def test_hf_cut_off_tool_call_is_flagged_not_text():
     assert text == "Let me check." and calls[0]["name"] == "bash" and calls[0]["arguments_error"]
     text, calls, _ = parse_reply('<tool_call>\n{"name": "submit", "arguments": "{\\"answer\\": \\"42\\"}"}\n</tool_call>')
     assert calls[0]["arguments"] == {"answer": "42"} and "arguments_error" not in calls[0]
+
+
+def test_hf_text_calls_for_offered_tools_only():
+    from siamlm.providers.hf import text_call
+    submit = {"type": "function", "function": {"name": "submit", "parameters": {"type": "object",
+              "properties": {"answer": {"type": "string"}}, "required": ["answer"]}}}
+    bash = {"type": "function", "function": {"name": "bash", "parameters": {"type": "object",
+            "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
+    calls, words = text_call("submit(64698)", [submit, bash])
+    assert calls == [{"id": "hf_0", "name": "submit", "arguments": {"answer": "64698"}, "format": "text_call"}] and words == ""
+    assert text_call('submit\n{"answer": "17131"}', [submit])[0][0]["arguments"] == {"answer": "17131"}
+    assert text_call("submit('u8494')", [submit])[0][0]["arguments"] == {"answer": "u8494"}
+    for keep in ("The answer is 17131.", "submit(64698) and then more text", "launch(x)", 'submit\n{"answer": '):
+        assert text_call(keep, [submit, bash]) == ([], keep)
+    assert text_call("submit(1)", [bash]) == ([], "submit(1)")          # not offered: stays text

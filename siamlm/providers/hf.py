@@ -154,6 +154,39 @@ def parse_reply(raw: str) -> tuple[str, list[dict], str | None]:
     return text, calls, reasoning
 
 
+TEXT_CALL = re.compile(r"^\s*`?(\w+)\s*(?:\((.*)\)|\n\s*(\{.*\}))\s*`?\s*$", re.S)
+
+
+def text_call(words: str, tools: list[dict]) -> tuple[list[dict], str]:
+    """A reply that is only a call written as text, `name(value)` or `name` followed by a JSON object on the next line,
+    naming a tool that was offered, becomes that call (format "text_call"): small local models drift into this after a
+    message breaks their tool-calling turn. `name(value)` fills the tool's one required parameter (or its only one).
+    Anything else, or a name not offered, stays text. Returns (calls, words)."""
+    m = TEXT_CALL.match(words or "")
+    if not m:
+        return [], words
+    spec = next((t.get("function", t) for t in tools if (t.get("function", t)).get("name") == m.group(1)), None)
+    if spec is None:
+        return [], words
+    params = spec.get("parameters") or {}
+    if m.group(3) is not None:
+        try:
+            args = json.loads(m.group(3))
+        except json.JSONDecodeError:
+            return [], words
+        if not isinstance(args, dict):
+            return [], words
+    else:
+        names = list(params.get("required") or []) or list((params.get("properties") or {}).keys())
+        value = (m.group(2) or "").strip()
+        if len(names) != 1:
+            return [], words
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        args = {names[0]: value}
+    return [{"id": "hf_0", "name": m.group(1), "arguments": args, "format": "text_call"}], ""
+
+
 class HFProvider:
     name = "hf"
 
@@ -279,6 +312,8 @@ class HFProvider:
         words, calls, reasoning = parse_reply(raw)
         if not offered:
             calls = []
+        elif not calls:                                 # a call written as text, for a tool this request offered
+            calls, words = text_call(words, offered)
         ended = len(new) > 0 and int(new[-1]) in {self.tokenizer.eos_token_id, *(
             [self.lm.generation_config.eos_token_id] if isinstance(self.lm.generation_config.eos_token_id, int)
             else self.lm.generation_config.eos_token_id or [])}
